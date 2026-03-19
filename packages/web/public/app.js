@@ -740,18 +740,20 @@ async function createTask() {
   const agent    = document.getElementById('task-agent').value || undefined;
   const workflow = document.getElementById('task-workflow').value || undefined;
   const branch   = document.getElementById('task-branch').value.trim() || undefined;
+  const project  = document.getElementById('task-project').value.trim() || undefined;
 
   const btn = document.getElementById('btn-create-task');
   btn.disabled = true;
   btn.innerHTML = `<div class="spinner"></div> Creating…`;
 
   try {
-    const result = await api('/api/tasks', 'POST', { description, agent, workflow, sourceBranch: branch });
+    const result = await api('/api/tasks', 'POST', { description, agent, workflow, sourceBranch: branch, project });
     closeCreateModal();
     document.getElementById('task-description').value = '';
     document.getElementById('task-agent').value = '';
     document.getElementById('task-workflow').value = '';
     document.getElementById('task-branch').value = '';
+    document.getElementById('task-project').value = '';
 
     const newId = result.taskId || result.tasks?.[0]?.taskId;
     toast(`Task created${newId ? ` (#${newId})` : ''}!`, 'success');

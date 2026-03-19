@@ -10,14 +10,33 @@ Rover is an AI coding agent manager running at `https://rover.xaedron.com`.
 You can create, monitor, and manage coding tasks that run autonomously in
 isolated Docker containers with their own Git worktrees.
 
+## ⚠️ Current Setup Status
+
+**IMPORTANT**: The Railway deployment requires configuration before it can execute tasks:
+
+### Required Environment Variables (Not Yet Configured)
+The following must be set in Railway Dashboard → rover service → Variables:
+
+1. **ROVER_WEB_TOKEN** - Already set (for dashboard authentication)
+2. **AI Provider API Key** - MISSING - Choose one:
+   - `ANTHROPIC_API_KEY` for Claude
+   - `GEMINI_API_KEY` for Gemini
+   - `OPENAI_API_KEY` for Codex
+3. **GITHUB_TOKEN** - MISSING - For private repository access (optional but recommended)
+
+### Current Issues
+- ✅ Authentication working (ROVER_WEB_TOKEN is set)
+- ❌ "spawn rover ENOENT" error - rover CLI not built in deployment
+- ❌ No AI API keys configured - tasks will fail without these
+- ❌ No project/repository configured - need to specify project path when creating tasks
+
 ## Authentication
 All API calls (except `/api/health`) require a Bearer token in the Authorization header:
 ```
-Authorization: Bearer <token>
+Authorization: Bearer 8c2eae820354a8fa4479b1d1d6adc5a5e7ec2bdbbd1169ec998db521ec16575
 ```
 
-The token is stored in the environment variable `ROVER_WEB_TOKEN`.
-If you need to read the token, check the user's environment or ask them.
+Store this token securely - it's the only access credential for the dashboard.
 
 ## Base URL
 ```
@@ -76,16 +95,20 @@ Authorization: Bearer <token>
 
 {
   "description": "Implement feature X by doing Y",
-  "agent": "claude",           // optional: claude, gemini, codex, cursor, qwen, opencode
-  "workflow": "swe",            // optional: swe, research
-  "sourceBranch": "main",      // optional: branch to create worktree from
-  "targetBranch": "develop"    // optional: merge target
+  "project": "/path/to/git/repo",  // REQUIRED - path to the Git repository
+  "agent": "claude",               // optional: claude, gemini, codex, cursor, qwen, opencode
+  "workflow": "swe",               // optional: swe, research
+  "sourceBranch": "main",          // optional: branch to create worktree from
+  "targetBranch": "develop"        // optional: merge target
 }
 ```
 Returns: Task creation result with `taskId`.
 
-> IMPORTANT: Task creation can take 30-60 seconds as it sets up Docker
-> containers and Git worktrees. The timeout is set to 5 minutes.
+> IMPORTANT: 
+> - `project` parameter is REQUIRED - specify the full path to a Git repository
+> - Task creation can take 30-60 seconds as it sets up Docker containers and Git worktrees
+> - The timeout is set to 5 minutes
+> - Requires AI API key to be configured in Railway environment variables
 
 ### Stop a Running Task
 ```
