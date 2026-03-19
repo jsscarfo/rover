@@ -4,5 +4,7 @@
   "mcps": [],
   "packageManagers": ["npm"],
   "taskManagers": [],
-  "attribution": true
+  "attribution": true,
+  "envs": ["GITHUB_TOKEN"],
+  "initScript": ".agents/scripts/git-credentials.sh"
 }

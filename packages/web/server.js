@@ -34,6 +34,39 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ── Public health check (before auth) ─────────────────────────────────────
+app.get('/api/health', (_req, res) => {
+  res.json({ 
+    ok: true, 
+    authRequired: !!process.env.ROVER_WEB_TOKEN,
+    version: '1.0.0'
+  });
+});
+
+// ── Auth middleware ────────────────────────────────────────────────────────
+// If ROVER_WEB_TOKEN is set, all /api/* routes require Bearer token auth.
+// Static files (the SPA itself) are NOT gated, so the login page can load.
+const AUTH_TOKEN = process.env.ROVER_WEB_TOKEN;
+
+function authMiddleware(req, res, next) {
+  if (!AUTH_TOKEN) return next(); // No token set → open access (local dev)
+  
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+  }
+  
+  const token = authHeader.slice(7); // strip "Bearer "
+  if (token !== AUTH_TOKEN) {
+    return res.status(401).json({ error: 'Invalid token', code: 'INVALID_TOKEN' });
+  }
+  
+  next();
+}
+
+// Apply to all API routes
+app.use('/api', authMiddleware);
+
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 /**

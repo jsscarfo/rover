@@ -18,10 +18,35 @@ const state = {
 
 // ── Utils ────────────────────────────────────────────────
 
+// ── Auth ──────────────────────────────────────────────
+function getToken() {
+  return sessionStorage.getItem('rover_token');
+}
+
+function setToken(token) {
+  sessionStorage.setItem('rover_token', token);
+}
+
+function clearToken() {
+  sessionStorage.removeItem('rover_token');
+}
+
 async function api(path, method = 'GET', body = null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  const token = getToken();
+  if (token) opts.headers['Authorization'] = `Bearer ${token}`;
   if (body) opts.body = JSON.stringify(body);
+
   const res = await fetch(path, opts);
+
+  if (res.status === 401) {
+    const data = await res.json().catch(() => ({}));
+    if (data.code === 'AUTH_REQUIRED' || data.code === 'INVALID_TOKEN') {
+      showLoginModal(data.code === 'INVALID_TOKEN' ? 'Invalid token. Please try again.' : null);
+      throw new Error('AUTH_REQUIRED');
+    }
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || res.statusText);
@@ -662,6 +687,37 @@ async function restartTask(id) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
+// ── Login Modal ───────────────────────────────────────────
+
+function showLoginModal(errorMsg = null) {
+  document.getElementById('login-modal').classList.add('open');
+  const errEl = document.getElementById('login-error');
+  if (errorMsg) {
+    errEl.textContent = errorMsg;
+    errEl.style.display = 'block';
+  } else {
+    errEl.style.display = 'none';
+  }
+  setTimeout(() => document.getElementById('login-token').focus(), 100);
+}
+
+function closeLoginModal() {
+  document.getElementById('login-modal').classList.remove('open');
+}
+
+async function submitLogin() {
+  const token = document.getElementById('login-token').value.trim();
+  if (!token) return;
+  setToken(token);
+  closeLoginModal();
+  await init(); // re-initialize with the token
+}
+
+function logout() {
+  clearToken();
+  location.reload();
+}
+
 // ── Create Task Modal ─────────────────────────────────────
 
 function openCreateModal() {
@@ -715,9 +771,22 @@ document.getElementById('create-modal').addEventListener('click', function(e) {
   if (e.target === this) closeCreateModal();
 });
 
+// Close login modal when clicking overlay
+document.getElementById('login-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeLoginModal();
+});
+
+// Login token Enter key handler
+document.getElementById('login-token')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitLogin();
+});
+
 // Close modal with Escape
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeCreateModal();
+  if (e.key === 'Escape') {
+    closeCreateModal();
+    closeLoginModal();
+  }
 });
 
 // Textarea: Ctrl+Enter to submit
@@ -728,6 +797,18 @@ document.getElementById('task-description').addEventListener('keydown', e => {
 // ── Init ──────────────────────────────────────────────────
 
 async function init() {
+  try {
+    const health = await fetch('/api/health').then(r => r.json());
+    if (health.authRequired && !getToken()) {
+      showLoginModal();
+      return;
+    }
+  } catch { /* ignore — server might not have health endpoint */ }
+
+  // Show/hide logout button based on auth state
+  const logoutBtn = document.getElementById('btn-logout');
+  if (logoutBtn) logoutBtn.style.display = getToken() ? '' : 'none';
+
   await loadTasks();
   startAutoRefresh();
 }
