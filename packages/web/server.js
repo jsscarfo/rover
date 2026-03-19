@@ -52,24 +52,33 @@ app.get('/api/health', async (_req, res) => {
   // Check if rover CLI is reachable — use direct exec to avoid auth/docker checks
   let roverAvailable = false;
   let roverVersion = null;
+  let roverError = null;
   try {
-    await new Promise((resolve, reject) => {
+    await new Promise((resolve) => {
       const onResult = (err, stdout, stderr) => {
-        const output = (stdout || stderr || '').toString().trim();
+        const output = (stdout || '').toString().trim();
+        const errOutput = (stderr || '').toString().trim();
         if (output) {
           roverAvailable = true;
           roverVersion = output.split('\n')[0]; // first line
+        } else if (errOutput) {
+          // Some CLIs print version to stderr
+          roverAvailable = true;
+          roverVersion = errOutput.split('\n')[0];
+        }
+        if (err && !roverAvailable) {
+          roverError = (err.message || '') + ' | stdout: ' + output + ' | stderr: ' + errOutput;
         }
         resolve(); // always resolve — we just want to know if binary runs
       };
       if (IS_NODE_INVOKE) {
-        exec(`${ROVER_BIN} --version 2>&1`, { timeout: 5000 }, onResult);
+        exec(`${ROVER_BIN} --version`, { timeout: 5000 }, onResult);
       } else {
         execFile(ROVER_BIN, ['--version'], { timeout: 5000 }, onResult);
       }
     });
   } catch (e) {
-    // Rover CLI not available
+    roverError = e.message;
   }
   
   res.json({ 
@@ -79,7 +88,8 @@ app.get('/api/health', async (_req, res) => {
     roverCli: {
       available: roverAvailable,
       version: roverVersion,
-      path: ROVER_BIN
+      path: ROVER_BIN,
+      error: roverError,
     }
   });
 });
