@@ -49,13 +49,25 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Public health check (before auth) ─────────────────────────────────────
 app.get('/api/health', async (_req, res) => {
-  // Check if rover CLI is available
+  // Check if rover CLI is reachable — use direct exec to avoid auth/docker checks
   let roverAvailable = false;
   let roverVersion = null;
   try {
-    const result = await rover(['--version'], { timeout: 5000 });
-    roverAvailable = true;
-    roverVersion = result.raw || result.version || 'unknown';
+    await new Promise((resolve, reject) => {
+      const onResult = (err, stdout, stderr) => {
+        const output = (stdout || stderr || '').toString().trim();
+        if (output) {
+          roverAvailable = true;
+          roverVersion = output.split('\n')[0]; // first line
+        }
+        resolve(); // always resolve — we just want to know if binary runs
+      };
+      if (IS_NODE_INVOKE) {
+        exec(`${ROVER_BIN} --version 2>&1`, { timeout: 5000 }, onResult);
+      } else {
+        execFile(ROVER_BIN, ['--version'], { timeout: 5000 }, onResult);
+      }
+    });
   } catch (e) {
     // Rover CLI not available
   }
