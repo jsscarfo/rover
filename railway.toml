@@ -3,6 +3,6 @@ builder = "nixpacks"
 buildCommand = "pnpm install --frozen-lockfile && npm install -g @endorhq/rover@latest"
 
 [deploy]
-startCommand = "pnpm web"
+startCommand = "ROVER_BIN=/usr/local/bin/rover pnpm web"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
