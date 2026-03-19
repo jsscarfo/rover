@@ -84,7 +84,7 @@ app.get('/api/health', async (_req, res) => {
   res.json({ 
     ok: true, 
     authRequired: !!process.env.ROVER_WEB_TOKEN,
-    version: '1.0.0',
+    version: '1.0.1-debug',
     roverCli: {
       available: roverAvailable,
       version: roverVersion,
