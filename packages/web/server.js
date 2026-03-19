@@ -12,6 +12,10 @@ const __dirname = path.dirname(__filename);
 // Priority: ROVER_BIN env var → local monorepo build → system 'rover'
 function resolveRoverBin() {
   if (process.env.ROVER_BIN) return process.env.ROVER_BIN;
+  
+  // For Railway deployment: rover CLI must be installed globally or via ROVER_BIN env var
+  // The monorepo build requires native bindings that aren't available in Railway's environment
+  
   // Try paths relative to this file when running inside the monorepo
   const candidates = [
     path.resolve(__dirname, '../cli/dist/index.mjs'),       // packages/web → packages/cli
@@ -35,11 +39,27 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Public health check (before auth) ─────────────────────────────────────
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', async (_req, res) => {
+  // Check if rover CLI is available
+  let roverAvailable = false;
+  let roverVersion = null;
+  try {
+    const result = await rover(['--version'], { timeout: 5000 });
+    roverAvailable = true;
+    roverVersion = result.raw || result.version || 'unknown';
+  } catch (e) {
+    // Rover CLI not available
+  }
+  
   res.json({ 
     ok: true, 
     authRequired: !!process.env.ROVER_WEB_TOKEN,
-    version: '1.0.0'
+    version: '1.0.0',
+    roverCli: {
+      available: roverAvailable,
+      version: roverVersion,
+      path: ROVER_BIN
+    }
   });
 });
 

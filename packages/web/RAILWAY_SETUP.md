@@ -1,5 +1,29 @@
 # Railway Deployment Setup for Rover Web Dashboard
 
+## ⚠️ Current Limitation
+
+**The Rover CLI cannot be built on Railway** due to native binding issues with the `rolldown` bundler used by `tsdown`. This means the web dashboard can display the UI but cannot execute rover CLI commands (creating tasks, etc.) without additional setup.
+
+## Workaround Options
+
+### Option 1: Use ROVER_BIN Environment Variable (Recommended)
+Point to a pre-installed rover binary:
+```
+ROVER_BIN=/usr/local/bin/rover
+```
+
+### Option 2: Deploy to a Different Platform
+Consider platforms that support full Docker builds:
+- AWS ECS
+- DigitalOcean App Platform
+- Fly.io
+- Self-hosted with Docker
+
+### Option 3: Use as Read-Only Dashboard
+The dashboard can still display task information if you:
+1. Run rover CLI locally or on another server
+2. Use the web dashboard only for monitoring (read-only)
+
 ## Required Environment Variables
 
 Configure these in Railway Dashboard → Service → Variables:

@@ -805,6 +805,12 @@ async function init() {
       showLoginModal();
       return;
     }
+    
+    // Check if rover CLI is available
+    if (health.roverCli && !health.roverCli.available) {
+      toast('Rover CLI is not available on this server. Task creation will not work.', 'error');
+      console.warn('Rover CLI not found:', health.roverCli);
+    }
   } catch { /* ignore — server might not have health endpoint */ }
 
   // Show/hide logout button based on auth state
