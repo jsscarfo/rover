@@ -9,14 +9,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ── Resolve rover binary ──────────────────────────────────────────────────
-// Priority: ROVER_BIN env var → local monorepo build → system 'rover'
+// Priority: ROVER_BIN env var → local monorepo build → npm global → system 'rover'
 function resolveRoverBin() {
   if (process.env.ROVER_BIN) return process.env.ROVER_BIN;
-  
-  // For Railway deployment: rover CLI must be installed globally or via ROVER_BIN env var
-  // The monorepo build requires native bindings that aren't available in Railway's environment
-  
-  // Try paths relative to this file when running inside the monorepo
+
+  // Try local monorepo build first (for local development)
   const candidates = [
     path.resolve(__dirname, '../cli/dist/index.mjs'),       // packages/web → packages/cli
     path.resolve(__dirname, '../../packages/cli/dist/index.mjs'), // root check
@@ -24,7 +21,19 @@ function resolveRoverBin() {
   for (const p of candidates) {
     if (existsSync(p)) return `node "${p}"`;
   }
-  return 'rover'; // fall back to system PATH
+
+  // Try common npm global binary locations (for Railway / Docker deployments)
+  const globalCandidates = [
+    '/usr/local/bin/rover',
+    '/usr/bin/rover',
+    '/root/.npm-global/bin/rover',
+    path.join(process.env.HOME || '/root', '.npm/bin/rover'),
+  ];
+  for (const p of globalCandidates) {
+    if (existsSync(p)) return p;
+  }
+
+  return 'rover'; // fall back to system PATH lookup
 }
 
 const ROVER_BIN = resolveRoverBin();
