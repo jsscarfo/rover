@@ -19,7 +19,8 @@
     "e2e-test": "pnpm -r --filter './packages/*' e2e-test",
     "test": "pnpm -r --filter './packages/*' --filter '!./packages/extension' test",
     "format": "biome format --write",
-    "lint": "biome lint --write"
+    "lint": "biome lint --write",
+    "web": "pnpm --filter @endorhq/rover-web dev"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.11",
