@@ -48,49 +48,45 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Public health check (before auth) ─────────────────────────────────────
-app.get('/api/health', async (_req, res) => {
-  // Check if rover CLI is reachable — use direct exec to avoid auth/docker checks
+app.get('/api/health', (_req, res) => {
+  // If the binary path was resolved to an explicit path (not the fallback 'rover'),
+  // verify it exists on disk — no need to execute it (Docker may not be available on Railway).
   let roverAvailable = false;
   let roverVersion = null;
   let roverError = null;
-  try {
-    await new Promise((resolve) => {
-      const onResult = (err, stdout, stderr) => {
-        const output = (stdout || '').toString().trim();
-        const errOutput = (stderr || '').toString().trim();
-        if (output) {
-          roverAvailable = true;
-          roverVersion = output.split('\n')[0]; // first line
-        } else if (errOutput) {
-          // Some CLIs print version to stderr
-          roverAvailable = true;
-          roverVersion = errOutput.split('\n')[0];
-        }
-        if (err && !roverAvailable) {
-          roverError = (err.message || '') + ' | stdout: ' + output + ' | stderr: ' + errOutput;
-        }
-        resolve(); // always resolve — we just want to know if binary runs
-      };
-      if (IS_NODE_INVOKE) {
-        exec(`${ROVER_BIN} --version`, { timeout: 5000 }, onResult);
-      } else {
-        execFile(ROVER_BIN, ['--version'], { timeout: 5000 }, onResult);
-      }
-    });
-  } catch (e) {
-    roverError = e.message;
+
+  if (IS_NODE_INVOKE) {
+    // Local monorepo build — extract the actual .mjs path and check it
+    const mjsPath = ROVER_BIN.replace(/^node "?/, '').replace(/"?$/, '');
+    if (existsSync(mjsPath)) {
+      roverAvailable = true;
+      roverVersion = 'installed (path verified)';
+    } else {
+      roverError = `File not found: ${mjsPath}`;
+    }
+  } else if (ROVER_BIN !== 'rover') {
+    // Resolved to an absolute path — just check it exists
+    if (existsSync(ROVER_BIN)) {
+      roverAvailable = true;
+      roverVersion = 'installed (path verified)';
+    } else {
+      roverError = `Binary not found at path: ${ROVER_BIN}`;
+    }
+  } else {
+    // Fell back to system PATH — mark unavailable; can't verify without executing
+    roverError = 'Rover binary not found in known paths; fallback to system PATH';
   }
-  
-  res.json({ 
-    ok: true, 
+
+  res.json({
+    ok: true,
     authRequired: !!process.env.ROVER_WEB_TOKEN,
-    version: '1.0.1-debug',
+    version: '1.1.0',
     roverCli: {
       available: roverAvailable,
       version: roverVersion,
       path: ROVER_BIN,
       error: roverError,
-    }
+    },
   });
 });
 
@@ -147,6 +143,60 @@ function rover(args, { cwd, timeout = 120_000 } = {}) {
   });
 }
 
+// ── Worker Registry ──────────────────────────────────────────────────────
+
+/**
+ * Read worker URLs from env vars:
+ *   WORKER_URLS=http://w1.railway.internal:3701,http://w2.railway.internal:3701
+ * OR individually:
+ *   WORKER_1_URL, WORKER_2_URL, ... WORKER_8_URL
+ */
+function getWorkerUrls() {
+  if (process.env.WORKER_URLS) {
+    return process.env.WORKER_URLS
+      .split(',')
+      .map(u => u.trim())
+      .filter(Boolean);
+  }
+  const urls = [];
+  for (let i = 1; i <= 8; i++) {
+    const u = process.env[`WORKER_${i}_URL`];
+    if (u) urls.push(u.trim());
+  }
+  return urls;
+}
+
+const WORKERS = getWorkerUrls();
+
+const WORKER_AUTH_HEADER = AUTH_TOKEN ? `Bearer ${AUTH_TOKEN}` : undefined;
+
+/**
+ * Poll each worker's /status endpoint and return the first idle one.
+ * Returns null if all workers are busy or unreachable.
+ *
+ * @returns {Promise<string|null>} Worker base URL or null
+ */
+async function getIdleWorker() {
+  for (const url of WORKERS) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const resp = await fetch(`${url}/status`, {
+        signal: controller.signal,
+        headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
+      });
+      clearTimeout(timeout);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (!data.busy) return url;
+      }
+    } catch {
+      // worker unreachable — skip
+    }
+  }
+  return null;
+}
+
 // ── API Routes ────────────────────────────────────────────────────────────
 
 // List tasks
@@ -195,10 +245,44 @@ app.get('/api/tasks/:id/diff', async (req, res) => {
   }
 });
 
-// Create a task
+// Create a task — dispatches to worker pool if workers are configured
 app.post('/api/tasks', async (req, res) => {
   try {
-    const { description, agent, workflow, sourceBranch, targetBranch, project } = req.body;
+    const { description, agent, workflow, sourceBranch, targetBranch, project,
+            repo, prompt, model, worktreeBranch, charter, envVars, taskId } = req.body;
+
+    // ── Worker pool dispatch ────────────────────────────────────────────
+    if (WORKERS.length > 0) {
+      const workerUrl = await getIdleWorker();
+      if (!workerUrl) {
+        return res.status(503).json({ error: 'All workers busy', code: 'ALL_WORKERS_BUSY' });
+      }
+
+      const taskPayload = {
+        taskId,
+        repo: repo || '',
+        prompt: prompt || description || '',
+        agent: agent || 'claude',
+        model,
+        worktreeBranch,
+        charter,
+        envVars,
+      };
+
+      const workerResp = await fetch(`${workerUrl}/task`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {}),
+        },
+        body: JSON.stringify(taskPayload),
+      });
+
+      const workerData = await workerResp.json();
+      return res.status(workerResp.status).json({ ...workerData, dispatchedTo: workerUrl });
+    }
+
+    // ── Local CLI fallback (no workers configured) ──────────────────────
     if (!description) return res.status(400).json({ error: 'description is required' });
 
     const args = ['task', '--json', '-y'];
@@ -278,6 +362,106 @@ app.get('/api/info', async (_req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── Worker / Constellation Routes ─────────────────────────────────────────
+
+/**
+ * Poll a single worker's /status endpoint.
+ * Returns a status object augmented with index and url, or an error record.
+ */
+async function fetchWorkerStatus(url, index) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const resp = await fetch(`${url}/status`, {
+      signal: controller.signal,
+      headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
+    });
+    clearTimeout(timeout);
+    if (resp.ok) {
+      const data = await resp.json();
+      return { index, url, online: true, ...data };
+    }
+    return { index, url, online: false, error: `HTTP ${resp.status}` };
+  } catch (err) {
+    return { index, url, online: false, error: err.message };
+  }
+}
+
+// GET /api/workers — status of all workers
+app.get('/api/workers', async (_req, res) => {
+  const statuses = await Promise.all(WORKERS.map((url, i) => fetchWorkerStatus(url, i + 1)));
+  res.json(statuses);
+});
+
+// GET /api/workers/:index/task/:taskId — proxy to worker task detail
+app.get('/api/workers/:index/task/:taskId', async (req, res) => {
+  const idx = parseInt(req.params.index, 10) - 1;
+  if (idx < 0 || idx >= WORKERS.length) {
+    return res.status(404).json({ error: 'Worker not found' });
+  }
+  try {
+    const resp = await fetch(`${WORKERS[idx]}/task/${req.params.taskId}`, {
+      headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
+    });
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// GET /api/workers/:index/task/:taskId/logs — proxy to worker task logs
+app.get('/api/workers/:index/task/:taskId/logs', async (req, res) => {
+  const idx = parseInt(req.params.index, 10) - 1;
+  if (idx < 0 || idx >= WORKERS.length) {
+    return res.status(404).json({ error: 'Worker not found' });
+  }
+  try {
+    const url = `${WORKERS[idx]}/task/${req.params.taskId}/logs`;
+    const qs = req.query.since ? `?since=${req.query.since}` : '';
+    const resp = await fetch(`${url}${qs}`, {
+      headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
+    });
+    const text = await resp.text();
+    res.status(resp.status).type('text/plain').send(text);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// POST /api/workers/:index/task/:taskId/stop — proxy stop to worker
+app.post('/api/workers/:index/task/:taskId/stop', async (req, res) => {
+  const idx = parseInt(req.params.index, 10) - 1;
+  if (idx < 0 || idx >= WORKERS.length) {
+    return res.status(404).json({ error: 'Worker not found' });
+  }
+  try {
+    const resp = await fetch(`${WORKERS[idx]}/task/${req.params.taskId}/stop`, {
+      method: 'POST',
+      headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
+    });
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// GET /api/constellation/status — aggregated worker status
+app.get('/api/constellation/status', async (_req, res) => {
+  const statuses = await Promise.all(WORKERS.map((url, i) => fetchWorkerStatus(url, i + 1)));
+  const online = statuses.filter(s => s.online);
+  const idle = online.filter(s => !s.busy);
+  const busy = online.filter(s => s.busy);
+  res.json({
+    workers: statuses,
+    totalWorkers: WORKERS.length,
+    onlineWorkers: online.length,
+    idleWorkers: idle.length,
+    busyWorkers: busy.length,
+  });
 });
 
 // SPA fallback — Express 5 wildcard syntax
