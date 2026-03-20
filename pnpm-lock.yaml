@@ -180,6 +180,8 @@ importers:
         specifier: catalog:build
         version: 2.1.9(@types/node@24.2.0)(@vitest/ui@2.1.9)
 
+  packages/constellation: {}
+
   packages/core:
     dependencies:
       ansi-colors:
@@ -343,6 +345,12 @@ importers:
       cors:
         specifier: ^2.8.5
         version: 2.8.5
+      express:
+        specifier: ^5.1.0
+        version: 5.1.0
+
+  packages/worker:
+    dependencies:
       express:
         specifier: ^5.1.0
         version: 5.1.0
