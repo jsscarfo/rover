@@ -13,7 +13,13 @@ const state = {
   tasks: [],
   info: null,
   autoRefreshTimer: null,
+  constellationTimer: null,
   AUTO_REFRESH_MS: 8000,
+  CONSTELLATION_MS: 10000,
+  workers: [],              // latest worker status array
+  drawerWorkerIndex: null,  // which worker is open in the drawer
+  drawerTaskId: null,       // task id being viewed in drawer
+  drawerLogTimer: null,     // polling timer for drawer logs
 };
 
 // ── Utils ────────────────────────────────────────────────
@@ -178,11 +184,219 @@ function refreshCurrentPage() {
   if (state.currentPage === 'tasks') loadTasks();
   else if (state.currentPage === 'detail' && state.currentTaskId) loadTaskDetail(state.currentTaskId);
   else if (state.currentPage === 'info') loadInfo();
+  else if (state.currentPage === 'workers') loadConstellationStatus();
 }
 
 function setLastRefresh() {
   const el = document.getElementById('last-refresh');
   if (el) el.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+}
+
+// ── Constellation / Worker Status ─────────────────────
+
+async function loadConstellationStatus(silent = false) {
+  try {
+    const data = await api('/api/constellation/status');
+    // data: { total, online, idle, busy, workers: [{index, url, state, taskId, agent}] }
+    state.workers = data.workers || [];
+    renderConstellationBar(data);
+    return data;
+  } catch {
+    // workers not configured or endpoint not available — hide bar content
+    if (!silent) renderConstellationBar(null);
+  }
+}
+
+function renderConstellationBar(data) {
+  const workersEl = document.getElementById('constellation-workers');
+  const summaryEl = document.getElementById('constellation-summary');
+  const placeholder = document.getElementById('worker-placeholder');
+
+  if (!data || !data.total) {
+    // No workers configured
+    if (placeholder) placeholder.style.display = '';
+    workersEl.querySelectorAll('.worker-badge').forEach(b => b.remove());
+    summaryEl.style.display = 'none';
+    return;
+  }
+
+  if (placeholder) placeholder.style.display = 'none';
+  summaryEl.style.display = 'flex';
+
+  // Update summary counts
+  document.getElementById('cs-idle').textContent   = data.idle    ?? 0;
+  document.getElementById('cs-busy').textContent   = data.busy    ?? 0;
+  document.getElementById('cs-offline').textContent = (data.total - data.online) ?? 0;
+
+  // Re-render badges (keep existing DOM nodes if count is same to avoid flicker)
+  const workers = data.workers || [];
+  const existingBadges = workersEl.querySelectorAll('.worker-badge');
+
+  workers.forEach((w, i) => {
+    const stateClass = w.state === 'idle' ? 'idle' : w.state === 'busy' ? 'busy' : 'offline';
+    const label = w.taskId
+      ? `W${w.index + 1} · ${escHtml(w.agent || '?')}`
+      : `W${w.index + 1}`;
+    const title = w.state === 'busy'
+      ? `Worker ${w.index + 1} — busy (task ${w.taskId})`
+      : `Worker ${w.index + 1} — ${w.state}`;
+
+    let badge = existingBadges[i];
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'worker-badge';
+      badge.innerHTML = '<span class="wdot"></span><span class="wlbl"></span>';
+      workersEl.appendChild(badge);
+    }
+    badge.className = `worker-badge ${stateClass}${w.state === 'busy' ? ' clickable' : ''}`;
+    badge.title = title;
+    badge.querySelector('.wlbl').textContent = label;
+
+    if (w.state === 'busy' && w.taskId !== undefined) {
+      badge.onclick = () => openWorkerDrawer(w.index, w.taskId);
+    } else {
+      badge.onclick = null;
+    }
+  });
+
+  // Remove extra badges
+  for (let i = workers.length; i < existingBadges.length; i++) {
+    existingBadges[i].remove();
+  }
+}
+
+function startConstellationPolling() {
+  stopConstellationPolling();
+  loadConstellationStatus(true);
+  state.constellationTimer = setInterval(() => loadConstellationStatus(true), state.CONSTELLATION_MS);
+}
+
+function stopConstellationPolling() {
+  if (state.constellationTimer) clearInterval(state.constellationTimer);
+  state.constellationTimer = null;
+}
+
+// ── Worker Drawer ─────────────────────────────────────
+
+async function openWorkerDrawer(workerIndex, taskId) {
+  state.drawerWorkerIndex = workerIndex;
+  state.drawerTaskId = taskId;
+
+  const drawer = document.getElementById('worker-drawer');
+  drawer.classList.add('open');
+
+  document.getElementById('drawer-worker-label').textContent = `Worker ${workerIndex + 1} — Task ${taskId}`;
+  document.getElementById('drawer-meta').innerHTML = '<div class="loading-state" style="padding:8px 0"><div class="spinner"></div></div>';
+  document.getElementById('drawer-log').innerHTML = '<div class="loading-state"><div class="spinner"></div> Loading logs…</div>';
+  document.getElementById('drawer-stop-btn').style.display = 'none';
+
+  await refreshDrawer();
+  startDrawerPolling();
+}
+
+async function refreshDrawer() {
+  const workerIndex = state.drawerWorkerIndex;
+  const taskId = state.drawerTaskId;
+  if (workerIndex === null || taskId === null) return;
+
+  try {
+    // Fetch task info
+    const [taskData, logsData] = await Promise.all([
+      api(`/api/workers/${workerIndex}/task/${taskId}`).catch(() => null),
+      api(`/api/workers/${workerIndex}/task/${taskId}/logs`).catch(() => null),
+    ]);
+
+    // Render meta
+    if (taskData) {
+      const statusClass = taskData.status === 'running' ? 'IN_PROGRESS' : taskData.status === 'done' ? 'COMPLETED' : 'FAILED';
+      document.getElementById('drawer-meta').innerHTML = `
+        <div class="drawer-meta-item">
+          <div class="drawer-meta-label">Status</div>
+          <div class="drawer-meta-value">${statusBadge(statusClass)}</div>
+        </div>
+        <div class="drawer-meta-item">
+          <div class="drawer-meta-label">Agent</div>
+          <div class="drawer-meta-value">${escHtml(taskData.agent || '—')}</div>
+        </div>
+        <div class="drawer-meta-item">
+          <div class="drawer-meta-label">Task ID</div>
+          <div class="drawer-meta-value mono">${escHtml(taskId)}</div>
+        </div>
+        ${taskData.repo ? `<div class="drawer-meta-item"><div class="drawer-meta-label">Repo</div><div class="drawer-meta-value mono" style="font-size:0.7rem;word-break:break-all">${escHtml(taskData.repo)}</div></div>` : ''}
+      `;
+
+      // Show/hide stop button
+      const stopBtn = document.getElementById('drawer-stop-btn');
+      stopBtn.style.display = taskData.status === 'running' ? '' : 'none';
+    }
+
+    // Render logs
+    if (logsData) {
+      const raw = logsData.logs || '';
+      const logEl = document.getElementById('drawer-log');
+      renderLogs(logEl, raw);
+    }
+  } catch (e) {
+    console.warn('Drawer refresh error:', e);
+  }
+}
+
+function startDrawerPolling() {
+  stopDrawerPolling();
+  state.drawerLogTimer = setInterval(refreshDrawer, 3000);
+}
+
+function stopDrawerPolling() {
+  if (state.drawerLogTimer) clearInterval(state.drawerLogTimer);
+  state.drawerLogTimer = null;
+}
+
+function closeWorkerDrawer() {
+  document.getElementById('worker-drawer').classList.remove('open');
+  stopDrawerPolling();
+  state.drawerWorkerIndex = null;
+  state.drawerTaskId = null;
+}
+
+async function stopWorkerTask() {
+  const wi = state.drawerWorkerIndex;
+  const tid = state.drawerTaskId;
+  if (wi === null || tid === null) return;
+  if (!confirm(`Stop worker ${wi + 1} task ${tid}?`)) return;
+  try {
+    await api(`/api/workers/${wi}/task/${tid}/stop`, 'POST');
+    toast('Worker task stopped.', 'success');
+    await refreshDrawer();
+    loadConstellationStatus(true);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Worker availability banner (for create modal) ────
+
+async function updateWorkerAvailBanner() {
+  const banner = document.getElementById('worker-avail-banner');
+  if (!banner) return;
+
+  try {
+    const data = await api('/api/constellation/status');
+    if (!data || !data.total) {
+      banner.style.display = 'flex';
+      banner.className = 'worker-avail-banner avail-none';
+      banner.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12" y2="16"/></svg>No worker pool configured — task will run via local CLI.`;
+      return;
+    }
+    if (data.idle > 0) {
+      banner.style.display = 'flex';
+      banner.className = 'worker-avail-banner avail-ok';
+      banner.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>${data.idle} worker${data.idle !== 1 ? 's' : ''} idle and ready.`;
+    } else {
+      banner.style.display = 'flex';
+      banner.className = 'worker-avail-banner avail-busy';
+      banner.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12" y2="16"/></svg>All ${data.total} workers busy — task will queue or may fail.`;
+    }
+  } catch {
+    banner.style.display = 'none';
+  }
 }
 
 // ── Tasks Page ────────────────────────────────────────────
@@ -737,9 +951,12 @@ async function createTask() {
     return;
   }
 
-  const agent    = document.getElementById('task-agent').value || undefined;
-  const workflow = document.getElementById('task-workflow').value || undefined;
-  const branch   = document.getElementById('task-branch').value.trim() || undefined;
+  const agent    = document.getElementById('task-agent').value    || undefined;
+  const role     = document.getElementById('task-role').value     || undefined;
+  const model    = document.getElementById('task-model').value.trim() || undefined;
+  const priority = document.getElementById('task-priority').value || undefined;
+  const repo     = document.getElementById('task-repo').value.trim()    || undefined;
+  const branch   = document.getElementById('task-branch').value.trim()  || undefined;
   const project  = document.getElementById('task-project').value.trim() || undefined;
 
   const btn = document.getElementById('btn-create-task');
@@ -747,11 +964,14 @@ async function createTask() {
   btn.innerHTML = `<div class="spinner"></div> Creating…`;
 
   try {
-    const result = await api('/api/tasks', 'POST', { description, agent, workflow, sourceBranch: branch, project });
+    const result = await api('/api/tasks', 'POST', { description, agent, role, model, priority, repo, sourceBranch: branch, project });
     closeCreateModal();
     document.getElementById('task-description').value = '';
     document.getElementById('task-agent').value = '';
-    document.getElementById('task-workflow').value = '';
+    document.getElementById('task-role').value = '';
+    document.getElementById('task-model').value = '';
+    document.getElementById('task-priority').value = 'batch';
+    document.getElementById('task-repo').value = '';
     document.getElementById('task-branch').value = '';
     document.getElementById('task-project').value = '';
 
@@ -760,6 +980,8 @@ async function createTask() {
     showPage('tasks');
     await loadTasks();
     if (newId) setTimeout(() => openTask(newId), 600);
+    // Refresh worker status after dispatch
+    setTimeout(() => loadConstellationStatus(true), 1500);
   } catch (e) {
     toast(e.message, 'error');
   } finally {
@@ -773,6 +995,13 @@ document.getElementById('create-modal').addEventListener('click', function(e) {
   if (e.target === this) closeCreateModal();
 });
 
+// Open create modal — also refresh worker availability banner
+function openCreateModal() {
+  document.getElementById('create-modal').classList.add('open');
+  setTimeout(() => document.getElementById('task-description').focus(), 100);
+  updateWorkerAvailBanner();
+}
+
 // Close login modal when clicking overlay
 document.getElementById('login-modal').addEventListener('click', function(e) {
   if (e.target === this) closeLoginModal();
@@ -783,11 +1012,12 @@ document.getElementById('login-token')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') submitLogin();
 });
 
-// Close modal with Escape
+// Close modal with Escape (also closes worker drawer)
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closeCreateModal();
     closeLoginModal();
+    closeWorkerDrawer();
   }
 });
 
@@ -805,20 +1035,18 @@ async function init() {
       showLoginModal();
       return;
     }
-    
-    // Check if rover CLI is available
     if (health.roverCli && !health.roverCli.available) {
       toast('Rover CLI is not available on this server. Task creation will not work.', 'error');
       console.warn('Rover CLI not found:', health.roverCli);
     }
   } catch { /* ignore — server might not have health endpoint */ }
 
-  // Show/hide logout button based on auth state
   const logoutBtn = document.getElementById('btn-logout');
   if (logoutBtn) logoutBtn.style.display = getToken() ? '' : 'none';
 
   await loadTasks();
   startAutoRefresh();
+  startConstellationPolling();
 }
 
 init();

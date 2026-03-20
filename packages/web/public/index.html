@@ -100,6 +100,21 @@
       </div>
     </header>
 
+    <!-- Constellation Status Bar -->
+    <div class="constellation-bar" id="constellation-bar">
+      <div class="constellation-workers" id="constellation-workers">
+        <!-- Worker badges populated by JS -->
+        <span class="worker-placeholder" id="worker-placeholder">No workers configured</span>
+      </div>
+      <div class="constellation-summary" id="constellation-summary" style="display:none">
+        <span id="cs-idle">—</span> idle
+        <span class="cs-sep">·</span>
+        <span id="cs-busy">—</span> busy
+        <span class="cs-sep">·</span>
+        <span id="cs-offline">—</span> offline
+      </div>
+    </div>
+
     <!-- Content -->
     <main class="content">
 
@@ -259,6 +274,33 @@
   </div>
 </div>
 
+<!-- ─── Worker Task Log Drawer ──────────────────────────── -->
+<div class="drawer-overlay" id="worker-drawer" onclick="closeWorkerDrawer()">
+  <div class="drawer" onclick="event.stopPropagation()">
+    <div class="drawer-header">
+      <div class="drawer-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+          <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+        <span id="drawer-worker-label">Worker</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-danger btn-sm" id="drawer-stop-btn" onclick="stopWorkerTask()" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><rect x="6" y="6" width="12" height="12"/></svg>
+          Stop
+        </button>
+        <button class="btn btn-ghost btn-sm btn-icon" onclick="closeWorkerDrawer()" title="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="drawer-meta" id="drawer-meta"></div>
+    <div class="drawer-log" id="drawer-log">
+      <div class="loading-state"><div class="spinner"></div> Loading logs…</div>
+    </div>
+  </div>
+</div>
+
 <!-- ─── Create Task Modal ────────────────────────────── -->
 <div class="modal-overlay" id="create-modal">
   <div class="modal">
@@ -266,6 +308,9 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
       Create New Task
     </div>
+
+    <!-- Worker availability banner -->
+    <div id="worker-avail-banner" style="display:none"></div>
 
     <div class="form-group">
       <label class="form-label" for="task-description">Task Description <span>*</span></label>
@@ -287,19 +332,47 @@
         </select>
       </div>
       <div class="form-group" style="margin-bottom:0">
-        <label class="form-label" for="task-workflow">Workflow</label>
-        <select class="form-select" id="task-workflow">
-          <option value="">Default (swe)</option>
-          <option value="swe">swe</option>
-          <option value="research">research</option>
+        <label class="form-label" for="task-role">Agent Role</label>
+        <select class="form-select" id="task-role">
+          <option value="">— none —</option>
+          <option value="coder-backend">Coder (Backend)</option>
+          <option value="coder-frontend">Coder (Frontend)</option>
+          <option value="coder-integration">Coder (Integration)</option>
+          <option value="director">Director</option>
+          <option value="docs-prod">Docs &amp; Production</option>
+          <option value="security">Security &amp; Debug</option>
+          <option value="aiml">AI/ML Specialist</option>
+          <option value="whatsapp">WhatsApp Specialist</option>
+          <option value="context-engineer">Context Engineer</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);margin-top:var(--space-4)">
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label" for="task-model">Model Override <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
+        <input class="form-input" id="task-model" type="text" placeholder="e.g. claude-sonnet-4-6-20250620" />
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label" for="task-priority">Priority</label>
+        <select class="form-select" id="task-priority">
+          <option value="batch">Batch (default)</option>
+          <option value="standard">Standard</option>
+          <option value="urgent">Urgent</option>
         </select>
       </div>
     </div>
 
     <div class="form-group mt-4">
-      <label class="form-label" for="task-project">Project Path <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
+      <label class="form-label" for="task-repo">Repository URL <span style="color:var(--text-3);font-weight:400">(required for workers)</span></label>
+      <input class="form-input" id="task-repo" type="text" placeholder="https://github.com/org/repo" />
+      <div class="form-hint">GitHub repo to clone. Required when dispatching to a worker.</div>
+    </div>
+
+    <div class="form-group mt-4">
+      <label class="form-label" for="task-project">Project Path <span style="color:var(--text-3);font-weight:400">(optional, local CLI)</span></label>
       <input class="form-input" id="task-project" type="text" placeholder="e.g. /path/to/project or leave empty for default" />
-      <div class="form-hint">The project directory where Rover will work. Leave empty to use the default registered project.</div>
+      <div class="form-hint">Local project directory. Used only when no workers are configured.</div>
     </div>
 
     <div class="form-group mt-4">

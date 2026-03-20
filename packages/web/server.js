@@ -397,8 +397,8 @@ app.get('/api/workers', async (_req, res) => {
 
 // GET /api/workers/:index/task/:taskId — proxy to worker task detail
 app.get('/api/workers/:index/task/:taskId', async (req, res) => {
-  const idx = parseInt(req.params.index, 10) - 1;
-  if (idx < 0 || idx >= WORKERS.length) {
+  const idx = parseInt(req.params.index, 10);
+  if (isNaN(idx) || idx < 0 || idx >= WORKERS.length) {
     return res.status(404).json({ error: 'Worker not found' });
   }
   try {
@@ -414,8 +414,8 @@ app.get('/api/workers/:index/task/:taskId', async (req, res) => {
 
 // GET /api/workers/:index/task/:taskId/logs — proxy to worker task logs
 app.get('/api/workers/:index/task/:taskId/logs', async (req, res) => {
-  const idx = parseInt(req.params.index, 10) - 1;
-  if (idx < 0 || idx >= WORKERS.length) {
+  const idx = parseInt(req.params.index, 10);
+  if (isNaN(idx) || idx < 0 || idx >= WORKERS.length) {
     return res.status(404).json({ error: 'Worker not found' });
   }
   try {
@@ -424,8 +424,8 @@ app.get('/api/workers/:index/task/:taskId/logs', async (req, res) => {
     const resp = await fetch(`${url}${qs}`, {
       headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
     });
-    const text = await resp.text();
-    res.status(resp.status).type('text/plain').send(text);
+    const data = await resp.json().catch(async () => ({ logs: await resp.text() }));
+    res.status(resp.status).json(data);
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
@@ -433,8 +433,8 @@ app.get('/api/workers/:index/task/:taskId/logs', async (req, res) => {
 
 // POST /api/workers/:index/task/:taskId/stop — proxy stop to worker
 app.post('/api/workers/:index/task/:taskId/stop', async (req, res) => {
-  const idx = parseInt(req.params.index, 10) - 1;
-  if (idx < 0 || idx >= WORKERS.length) {
+  const idx = parseInt(req.params.index, 10);
+  if (isNaN(idx) || idx < 0 || idx >= WORKERS.length) {
     return res.status(404).json({ error: 'Worker not found' });
   }
   try {
@@ -451,16 +451,28 @@ app.post('/api/workers/:index/task/:taskId/stop', async (req, res) => {
 
 // GET /api/constellation/status — aggregated worker status
 app.get('/api/constellation/status', async (_req, res) => {
-  const statuses = await Promise.all(WORKERS.map((url, i) => fetchWorkerStatus(url, i + 1)));
+  if (WORKERS.length === 0) {
+    return res.json({ total: 0, online: 0, idle: 0, busy: 0, workers: [] });
+  }
+  const statuses = await Promise.all(WORKERS.map((url, i) => fetchWorkerStatus(url, i)));
   const online = statuses.filter(s => s.online);
-  const idle = online.filter(s => !s.busy);
-  const busy = online.filter(s => s.busy);
+  const idleList = online.filter(s => !s.busy);
+  const busyList = online.filter(s => s.busy);
+
+  const workers = statuses.map(s => ({
+    index: s.index,
+    url: s.url,
+    state: !s.online ? 'offline' : s.busy ? 'busy' : 'idle',
+    taskId: s.taskId ?? null,
+    agent: s.agent ?? null,
+  }));
+
   res.json({
-    workers: statuses,
-    totalWorkers: WORKERS.length,
-    onlineWorkers: online.length,
-    idleWorkers: idle.length,
-    busyWorkers: busy.length,
+    total: WORKERS.length,
+    online: online.length,
+    idle: idleList.length,
+    busy: busyList.length,
+    workers,
   });
 });
 
