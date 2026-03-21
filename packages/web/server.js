@@ -485,6 +485,32 @@ app.post('/api/tasks/:id/push', async (req, res) => {
 
 // Restart a task
 app.post('/api/tasks/:id/restart', async (req, res) => {
+  if (WORKERS.length > 0) {
+    for (const url of WORKERS) {
+      try {
+        const resp = await fetch(`${url}/task/${req.params.id}`, {
+          headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {}
+        });
+        if (resp.ok) {
+          const detail = await resp.json();
+          // Found the task, create a replacement
+          const taskPayload = {
+            repo: detail.repo || '',
+            prompt: detail.prompt || detail.description || '',
+            agent: detail.agent || 'claude',
+            model: detail.model,
+            worktreeBranch: detail.worktreeBranch,
+            charter: detail.charter,
+            envVars: detail.envVars,
+          };
+          const dispatchRes = await dispatchToWorker(taskPayload);
+          return res.status(dispatchRes.status).json({ ...dispatchRes.data, dispatchedTo: dispatchRes.workerUrl });
+        }
+      } catch { /* skip */ }
+    }
+    return res.status(404).json({ error: 'Task not found on any worker to restart' });
+  }
+
   try {
     const args = ['restart', req.params.id, '--json'];
     if (req.query.project) args.push('--project', req.query.project);
