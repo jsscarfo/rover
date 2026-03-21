@@ -443,6 +443,18 @@ app.post('/task/:id/stop', (req, res) => {
   }
 });
 
+// DELETE /task/:id — delete a task
+app.delete('/task/:id', (req, res) => {
+  const task = tasks.get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  if (task.process) {
+    try { task.process.kill('SIGKILL'); } catch {}
+  }
+  tasks.delete(task.id);
+  res.json({ deleted: true, taskId: task.id });
+});
+
 // ── Start ──────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\n  🤖 Rover Worker Node`);

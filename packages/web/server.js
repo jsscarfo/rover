@@ -438,6 +438,19 @@ app.post('/api/tasks/:id/stop', async (req, res) => {
 
 // Delete a task
 app.post('/api/tasks/:id/delete', async (req, res) => {
+  if (WORKERS.length > 0) {
+    for (const url of WORKERS) {
+      try {
+        const resp = await fetch(`${url}/task/${req.params.id}`, {
+          method: 'DELETE',
+          headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {}
+        });
+        if (resp.ok) return res.status(200).json(await resp.json());
+      } catch { /* skip */ }
+    }
+    return res.status(404).json({ error: 'Task not found on any worker' });
+  }
+
   try {
     const args = ['delete', req.params.id, '-y', '--json'];
     if (req.query.project) args.push('--project', req.query.project);
