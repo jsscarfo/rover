@@ -1,126 +1,201 @@
 # Railway Deployment Setup for Rover Web Dashboard
 
-## ⚠️ Current Limitation
+## ✅ Current Status
 
-**The Rover CLI cannot be built on Railway** due to native binding issues with the `rolldown` bundler used by `tsdown`. This means the web dashboard can display the UI but cannot execute rover CLI commands (creating tasks, etc.) without additional setup.
+The Rover web dashboard is fully operational on Railway using a **distributed worker pool architecture**. The system consists of:
 
-## Workaround Options
+- **Web Coordinator** - Public-facing dashboard that dispatches tasks
+- **Worker Pool** - 5+ private Railway services that execute AI agent tasks natively
 
-### Option 1: Use ROVER_BIN Environment Variable (Recommended)
-Point to a pre-installed rover binary:
+## Architecture Overview
+
 ```
-ROVER_BIN=/usr/local/bin/rover
+Web Dashboard (rover.xaedron.com)
+├── Serves the UI
+├── Aggregates worker status
+├── Dispatches tasks to idle workers
+└── Proxies task requests to owning worker
+
+Worker Pool (Railway private network)
+├── rover-worker-1 through rover-worker-5
+├── Each worker runs Express + in-memory task Map
+├── Clone repos → run agents natively → push results
+└── MCP servers: Laureline-Code + Playwright
 ```
 
-### Option 2: Deploy to a Different Platform
-Consider platforms that support full Docker builds:
-- AWS ECS
-- DigitalOcean App Platform
-- Fly.io
-- Self-hosted with Docker
-
-### Option 3: Use as Read-Only Dashboard
-The dashboard can still display task information if you:
-1. Run rover CLI locally or on another server
-2. Use the web dashboard only for monitoring (read-only)
+Workers run agents **natively** in Railway containers (no Docker-in-Docker required). The Rover CLI is installed from npm during the build phase.
 
 ## Required Environment Variables
 
-Configure these in Railway Dashboard → Service → Variables:
+### Web Coordinator Service
 
-### 1. Authentication (Required)
-```
-ROVER_WEB_TOKEN=<your-secure-token>
-```
-Generate a secure token:
+Configure these in Railway Dashboard → Web Service → Variables:
+
 ```bash
-openssl rand -hex 32
+# Authentication (Required)
+ROVER_WEB_TOKEN=<your-secure-token>  # Generate with: openssl rand -hex 32
+
+# Worker URLs (Required for worker pool)
+WORKER_1_URL=http://rover-worker-1.railway.internal:3701
+WORKER_2_URL=http://rover-worker-2.railway.internal:3701
+WORKER_3_URL=http://rover-worker-3.railway.internal:3701
+WORKER_4_URL=http://rover-worker-4.railway.internal:3701
+WORKER_5_URL=http://rover-worker-5.railway.internal:3701
+
+# Or use comma-separated list:
+# WORKER_URLS=http://rover-worker-1.railway.internal:3701,http://rover-worker-2.railway.internal:3701,...
 ```
 
-### 2. AI Agent API Keys (Required for task execution)
+### Worker Services (Each Worker Needs These)
 
-Choose at least one AI provider:
+Configure these in Railway Dashboard → Worker Service → Variables:
 
-**For Claude (Anthropic):**
-```
-ANTHROPIC_API_KEY=sk-ant-...
-```
+```bash
+# Authentication (Required - same token as web)
+ROVER_WEB_TOKEN=<same-token-as-web>
 
-**For Gemini (Google):**
-```
-GEMINI_API_KEY=...
-```
+# AI Provider API Keys (Required)
+ANTHROPIC_API_KEY=sk-ant-...  # For Claude agent
 
-**For OpenAI Codex:**
-```
-OPENAI_API_KEY=sk-...
-```
+# GitHub Access (Required for cloning/pushing)
+GITHUB_TOKEN=ghp_...  # Create at: https://github.com/settings/tokens/new (repo scope)
 
-### 3. GitHub Access (Required for private repos)
-```
-GITHUB_TOKEN=ghp_...
-```
-Create a GitHub Personal Access Token with `repo` scope at:
-https://github.com/settings/tokens/new
+# Optional: Additional AI providers
+GEMINI_API_KEY=...    # For Gemini agent
+GOOGLE_API_KEY=...    # Alias for Gemini
 
-### 4. Docker Configuration (Optional)
+# Optional: MCP Configuration
+LAURELINE_INDEX_URL=http://laureline-index.railway.internal:8080/sse  # If using Laureline MCP
+PLAYWRIGHT_MCP=true   # Enable Playwright MCP (default: true)
 ```
-DOCKER_HOST=unix:///var/run/docker.sock
-```
-Note: Railway doesn't support Docker-in-Docker by default. For full Rover functionality, you'll need to:
-- Use Railway's Docker socket mounting (if available)
-- Or deploy to a platform that supports Docker (e.g., AWS ECS, DigitalOcean)
 
 ## Deployment Steps
 
-1. **Push to GitHub**
-   ```bash
-   git add .
-   git commit -m "Configure Railway deployment"
-   git push origin main
-   ```
+### 1. Deploy Web Coordinator
 
-2. **Configure Railway Service**
-   - Go to Railway Dashboard
-   - Select your service
-   - Navigate to Variables tab
-   - Add all required environment variables above
+```bash
+# Push to GitHub
+git add .
+git commit -m "Configure Railway deployment"
+git push origin main
+```
 
-3. **Verify Deployment**
-   - Check deployment logs for errors
-   - Visit your Railway URL
-   - Login with your `ROVER_WEB_TOKEN`
-   - Try creating a test task
+In Railway Dashboard:
+1. Create new service from GitHub repo
+2. Set root directory to repository root
+3. Configure environment variables (see above)
+4. Deploy
 
-## Troubleshooting
+### 2. Deploy Worker Services
 
-### "spawn rover ENOENT" Error
-This means the rover CLI wasn't built. Check:
-- Build logs show `pnpm --filter @endorhq/rover build` succeeded
-- `packages/cli/dist/index.mjs` exists after build
+For each worker (repeat 5 times for rover-worker-1 through rover-worker-5):
 
-### "Authentication required" on all requests
+1. Create new service from same GitHub repo
+2. Set root directory to `packages/worker`
+3. Configure environment variables (see above)
+4. Deploy
+
+Railway will automatically use the Dockerfile in `packages/worker/` to build each worker.
+
+### 3. Verify Deployment
+
+1. Visit your Railway web URL
+2. Login with your `ROVER_WEB_TOKEN`
+3. Check the constellation bar at the top - you should see W1-W5 badges
+4. Green badges = idle workers ready to accept tasks
+5. Try creating a test task with a GitHub repo URL
+
+## Common Issues & Solutions
+
+### Issue: "repo is required" error when creating tasks
+
+**Cause**: The repo field is empty in the create task form.
+
+**Solution**: Always provide a full GitHub repository URL when creating tasks:
+```
+https://github.com/username/repository
+```
+
+The worker needs to clone the repository to execute the agent task.
+
+### Issue: Tasks fail immediately with "Agent exited with code 1"
+
+**Possible causes**:
+1. **Invalid ANTHROPIC_API_KEY** - Check the API key has credit and is valid
+2. **Invalid GITHUB_TOKEN** - Check the token has `repo` scope for private repos
+3. **Repository not accessible** - Verify the GitHub token can access the repo
+4. **Empty prompt** - Ensure the task description is not empty
+
+**Debug steps**:
+1. Click the failed task in the dashboard
+2. Switch to the "Logs" tab to see detailed error messages
+3. Check worker logs in Railway dashboard for the specific worker
+
+### Issue: All workers show as offline
+
+**Cause**: Worker URLs not configured or incorrect.
+
+**Solution**: 
+1. Verify `WORKER_1_URL` through `WORKER_5_URL` are set in web service
+2. Use Railway private networking URLs: `http://rover-worker-N.railway.internal:3701`
+3. Ensure `ROVER_WEB_TOKEN` matches between web and all workers
+
+### Issue: Workers show as idle but tasks fail with "All workers busy"
+
+**Cause**: Race condition or worker status polling issue.
+
+**Solution**: 
+1. Refresh the page
+2. Wait a few seconds and try again
+3. Check worker logs for errors
+
+### Issue: "Authentication required" on all requests
+
+**Cause**: Token mismatch or not set.
+
+**Solution**:
 - Verify `ROVER_WEB_TOKEN` is set in Railway variables
 - Check you're using the correct token in the login modal
-
-### Tasks fail with "API key not found"
-- Add the appropriate AI provider API key (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, etc.)
 - Restart the service after adding variables
-
-### "Could not reach Rover CLI" error
-- Check Railway logs for the actual error
-- Verify the rover CLI build succeeded
-- Ensure Node.js 20+ is being used
 
 ## Architecture Notes
 
-The web dashboard runs the rover CLI as a child process. The CLI:
-1. Creates Docker containers for AI agent execution
-2. Manages Git worktrees for isolated task branches
-3. Coordinates with AI providers (Claude, Gemini, etc.)
+### How It Works
 
-For production use, consider:
-- Using a dedicated Docker host
-- Setting up persistent storage for Git repositories
-- Configuring proper resource limits
-- Implementing rate limiting for API calls
+1. **Task Creation**: User submits task via web dashboard with repo URL and prompt
+2. **Dispatch**: Web coordinator finds an idle worker and POSTs task payload
+3. **Execution**: Worker clones repo, runs agent CLI, commits and pushes changes
+4. **Monitoring**: Web dashboard polls workers for status and aggregates task list
+5. **Completion**: Worker pushes branch to GitHub, task marked as completed
+
+### Worker Task Lifecycle
+
+```
+ACCEPTED → CLONING → SETUP → RUNNING → PUSHING → COMPLETED
+                                  ↓
+                               FAILED
+```
+
+### Key Features
+
+- **Parallel execution**: Multiple workers can run tasks simultaneously
+- **Fault tolerance**: Workers restart on failure, tasks can be retried
+- **Live logs**: Stream task output in real-time via drawer UI
+- **Task management**: Stop, restart, delete tasks from the dashboard
+- **MCP integration**: Workers support Model Context Protocol servers
+- **Native execution**: No Docker-in-Docker complexity
+
+### Performance Considerations
+
+- Each worker can handle 1 task at a time
+- Tasks timeout after 30 minutes
+- Workers use Railway's private networking (low latency)
+- Temporary directories are cleaned up after each task
+- Workers sleep when idle (Railway's default behavior)
+
+### Security
+
+- All API endpoints require Bearer token authentication
+- GitHub tokens are never exposed to the frontend
+- Workers run as non-root user (security best practice)
+- Private Railway networking isolates workers from public internet
