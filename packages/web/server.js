@@ -197,6 +197,66 @@ async function getIdleWorker() {
   return null;
 }
 
+/**
+ * Dispatch a task payload to the first available idle worker.
+ * Retries all workers if a race-condition 409 is returned.
+ *
+ * @param {object} taskPayload
+ * @returns {Promise<{status: number, data: object, workerUrl: string}>}
+ */
+async function dispatchToWorker(taskPayload) {
+  // Gather all worker statuses in parallel
+  const statuses = await Promise.all(
+    WORKERS.map(async (url) => {
+      try {
+        const resp = await fetch(`${url}/status`, {
+          headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
+          signal: AbortSignal.timeout(3000),
+        });
+        if (!resp.ok) return { url, idle: false };
+        const data = await resp.json();
+        return { url, idle: !data.busy };
+      } catch {
+        return { url, idle: false };
+      }
+    })
+  );
+
+  const idleWorkers = statuses.filter((s) => s.idle).map((s) => s.url);
+  if (idleWorkers.length === 0) {
+    return { status: 503, data: { error: 'All workers busy', code: 'ALL_WORKERS_BUSY' }, workerUrl: null };
+  }
+
+  // Try each idle worker in turn (race-condition safety)
+  for (const url of idleWorkers) {
+    try {
+      const resp = await fetch(`${url}/task`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {}),
+        },
+        body: JSON.stringify(taskPayload),
+        signal: AbortSignal.timeout(10000),
+      });
+      const data = await resp.json();
+      if (resp.status === 202) {
+        // Accepted!
+        return { status: 202, data, workerUrl: url };
+      }
+      // 409 = busy (race), try next
+      if (resp.status !== 409) {
+        // Any other error — return immediately
+        return { status: resp.status, data, workerUrl: url };
+      }
+    } catch (err) {
+      // Network error on this worker, try next
+    }
+  }
+
+  return { status: 503, data: { error: 'All workers rejected the task', code: 'ALL_WORKERS_BUSY' }, workerUrl: null };
+}
+
 // ── API Routes ────────────────────────────────────────────────────────────
 
 // List tasks — aggregate from workers when configured, else use local rover CLI
@@ -291,11 +351,6 @@ app.post('/api/tasks', async (req, res) => {
 
     // ── Worker pool dispatch ────────────────────────────────────────────
     if (WORKERS.length > 0) {
-      const workerUrl = await getIdleWorker();
-      if (!workerUrl) {
-        return res.status(503).json({ error: 'All workers busy', code: 'ALL_WORKERS_BUSY' });
-      }
-
       const taskPayload = {
         taskId,
         repo: repo || '',
@@ -307,17 +362,8 @@ app.post('/api/tasks', async (req, res) => {
         envVars,
       };
 
-      const workerResp = await fetch(`${workerUrl}/task`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {}),
-        },
-        body: JSON.stringify(taskPayload),
-      });
-
-      const workerData = await workerResp.json();
-      return res.status(workerResp.status).json({ ...workerData, dispatchedTo: workerUrl });
+      const { status, data, workerUrl } = await dispatchToWorker(taskPayload);
+      return res.status(status).json({ ...data, dispatchedTo: workerUrl });
     }
 
     // ── Local CLI fallback (no workers configured) ──────────────────────
