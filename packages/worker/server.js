@@ -17,14 +17,18 @@
 
 import express from 'express';
 import { execFile, exec } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 3701;
 const AUTH_TOKEN = process.env.ROVER_WEB_TOKEN;
@@ -190,6 +194,48 @@ async function runTask(task) {
     const agentBin = await ensureAgent(task.agent, (msg) => log(task, msg));
     log(task, `Using agent binary: ${agentBin}`);
 
+    // ── MCP CONFIG INJECTION ───────────────────────────────────────────
+    // Build mcp.json with Laureline Code index + Playwright if configured.
+    const mcpServers = {};
+    const LAURELINE_INDEX_URL = process.env.LAURELINE_INDEX_URL;
+    const PLAYWRIGHT_MCP = process.env.PLAYWRIGHT_MCP !== 'false'; // default on
+
+    if (LAURELINE_INDEX_URL) {
+      // Copy mcp-bridge.js into the workDir
+      const bridgeSrc = path.join(__dirname, 'mcp-bridge.js');
+      const bridgeDst = path.join(workDir, 'mcp-bridge.js');
+      if (existsSync(bridgeSrc)) {
+        writeFileSync(bridgeDst, readFileSync(bridgeSrc));
+        mcpServers['laureline-code'] = {
+          command: 'node',
+          args: ['./mcp-bridge.js'],
+          env: {
+            LAURELINE_INDEX_URL,
+            ...(AUTH_TOKEN ? { ROVER_WEB_TOKEN: AUTH_TOKEN } : {}),
+          },
+        };
+        log(task, `MCP: laureline-code → ${LAURELINE_INDEX_URL}`);
+      } else {
+        log(task, 'MCP: mcp-bridge.js not found, skipping laureline-code');
+      }
+    }
+
+    if (PLAYWRIGHT_MCP) {
+      mcpServers['playwright'] = {
+        command: 'npx',
+        args: ['@playwright/mcp@latest', '--headless'],
+      };
+      log(task, 'MCP: playwright enabled (headless)');
+    }
+
+    const hasMcp = Object.keys(mcpServers).length > 0;
+    let mcpConfigPath = null;
+    if (hasMcp) {
+      mcpConfigPath = path.join(workDir, '.mcp.json');
+      writeFileSync(mcpConfigPath, JSON.stringify({ mcpServers }, null, 2));
+      log(task, `MCP config written: ${Object.keys(mcpServers).join(', ')}`);
+    }
+
     // ── RUNNING ────────────────────────────────────────────────────────
     task.status = 'RUNNING';
     log(task, `Running agent: ${agentBin}`);
@@ -208,9 +254,11 @@ async function runTask(task) {
     if (task.agent === 'claude') {
       agentArgs = ['--dangerously-skip-permissions', '-p', task.prompt];
       if (task.model) agentArgs.push('--model', task.model);
+      if (mcpConfigPath) agentArgs.push('--mcp-config', mcpConfigPath);
     } else if (task.agent === 'gemini') {
       agentArgs = ['-p', task.prompt];
       if (task.model) agentArgs.push('--model', task.model);
+      // Gemini CLI MCP support: add when available
     } else {
       agentArgs = ['-p', task.prompt];
     }
