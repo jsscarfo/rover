@@ -95,6 +95,7 @@ function createTask(fields) {
     model: fields.model || null,
     charter: fields.charter || null,
     envVars: fields.envVars || {},
+    description: fields.prompt || fields.description || '', // Added for web app compatibility
     status: 'ACCEPTED',
     logs: [],
     startedAt: Date.now(),
@@ -381,7 +382,7 @@ app.post('/task', (req, res) => {
     return res.status(400).json({ error: 'repo is required' });
   }
 
-  const task = createTask(body);
+  const task = createTask({ ...body, description: body.description || body.prompt });
   tasks.set(task.id, task);
   currentTaskId = task.id;
   taskCount++;
@@ -390,6 +391,15 @@ app.post('/task', (req, res) => {
   runTask(task);
 
   return res.status(202).json({ accepted: true, taskId: task.id });
+});
+
+// GET /tasks — list all tasks on this worker
+app.get('/tasks', (_req, res) => {
+  const allTasks = Array.from(tasks.values()).map(t => {
+    const { process: _proc, logs: _logs, ...rest } = t;
+    return { ...rest, logCount: t.logs.length };
+  });
+  res.json(allTasks);
 });
 
 // GET /task/:id — task detail

@@ -271,25 +271,25 @@ app.get('/api/tasks', async (req, res) => {
       await Promise.all(
         statuses.map(async (s) => {
           if (!s.online) return;
-          const taskId = s.currentTaskId || s.taskId;
-          if (taskId) {
-            try {
-              const resp = await fetch(`${s.url}/task/${taskId}`, {
-                headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
-                signal: AbortSignal.timeout(3000),
-              });
-              if (resp.ok) {
-                const detail = await resp.json();
-                allTasks.push({
-                  ...detail,
-                  workerId: s.workerId || s.index,
-                  workerIndex: s.index,
-                  workerUrl: s.url,
-                });
-                return;
+          try {
+            const resp = await fetch(`${s.url}/tasks`, {
+              headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
+              signal: AbortSignal.timeout(3000),
+            });
+            if (resp.ok) {
+              const workerTasks = await resp.json();
+              if (Array.isArray(workerTasks)) {
+                for (const wt of workerTasks) {
+                  allTasks.push({
+                    ...wt,
+                    workerId: s.workerId || s.index,
+                    workerIndex: s.index,
+                    workerUrl: s.url,
+                  });
+                }
               }
-            } catch { /* worker task fetch failed */ }
-          }
+            }
+          } catch { /* worker tasks fetch failed */ }
         })
       );
       return res.json(allTasks);
@@ -310,6 +310,18 @@ app.get('/api/tasks', async (req, res) => {
 
 // Inspect a task
 app.get('/api/tasks/:id', async (req, res) => {
+  if (WORKERS.length > 0) {
+    for (const url of WORKERS) {
+      try {
+        const resp = await fetch(`${url}/task/${req.params.id}`, {
+          headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {}
+        });
+        if (resp.ok) return res.status(200).json(await resp.json());
+      } catch { /* skip */ }
+    }
+    return res.status(404).json({ error: 'Task not found on any worker' });
+  }
+
   try {
     const args = ['inspect', req.params.id, '--json'];
     if (req.query.project) args.push('--project', req.query.project);
@@ -321,6 +333,18 @@ app.get('/api/tasks/:id', async (req, res) => {
 
 // Task logs
 app.get('/api/tasks/:id/logs', async (req, res) => {
+  if (WORKERS.length > 0) {
+    for (const url of WORKERS) {
+      try {
+        const resp = await fetch(`${url}/task/${req.params.id}/logs`, {
+          headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {}
+        });
+        if (resp.ok) return res.status(200).json(await resp.json());
+      } catch { /* skip */ }
+    }
+    return res.status(404).json({ error: 'Task not found on any worker' });
+  }
+
   try {
     const args = ['logs', req.params.id];
     if (req.query.iteration) args.push(req.query.iteration);
@@ -334,6 +358,11 @@ app.get('/api/tasks/:id/logs', async (req, res) => {
 
 // Task diff
 app.get('/api/tasks/:id/diff', async (req, res) => {
+  if (WORKERS.length > 0) {
+    // Workers don't support diff yet natively in memory API, but we return empty obj so it doesn't crash
+    return res.status(200).json({ diff: '' });
+  }
+
   try {
     const args = ['diff', req.params.id, '--json'];
     if (req.query.project) args.push('--project', req.query.project);
@@ -385,6 +414,19 @@ app.post('/api/tasks', async (req, res) => {
 
 // Stop a task
 app.post('/api/tasks/:id/stop', async (req, res) => {
+  if (WORKERS.length > 0) {
+    for (const url of WORKERS) {
+      try {
+        const resp = await fetch(`${url}/task/${req.params.id}/stop`, {
+          method: 'POST',
+          headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {}
+        });
+        if (resp.ok) return res.status(200).json(await resp.json());
+      } catch { /* skip */ }
+    }
+    return res.status(404).json({ error: 'Task not found on any worker' });
+  }
+
   try {
     const args = ['stop', req.params.id, '--json'];
     if (req.query.project) args.push('--project', req.query.project);
