@@ -199,8 +199,46 @@ async function getIdleWorker() {
 
 // ── API Routes ────────────────────────────────────────────────────────────
 
-// List tasks
+// List tasks — aggregate from workers when configured, else use local rover CLI
 app.get('/api/tasks', async (req, res) => {
+  // ── Worker aggregation ─────────────────────────────────────────────────
+  if (WORKERS.length > 0) {
+    try {
+      const statuses = await Promise.all(
+        WORKERS.map((url, i) => fetchWorkerStatus(url, i + 1))
+      );
+      const allTasks = [];
+      await Promise.all(
+        statuses.map(async (s) => {
+          if (!s.online) return;
+          const taskId = s.currentTaskId || s.taskId;
+          if (taskId) {
+            try {
+              const resp = await fetch(`${s.url}/task/${taskId}`, {
+                headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
+                signal: AbortSignal.timeout(3000),
+              });
+              if (resp.ok) {
+                const detail = await resp.json();
+                allTasks.push({
+                  ...detail,
+                  workerId: s.workerId || s.index,
+                  workerIndex: s.index,
+                  workerUrl: s.url,
+                });
+                return;
+              }
+            } catch { /* worker task fetch failed */ }
+          }
+        })
+      );
+      return res.json(allTasks);
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  // ── Local CLI fallback (no workers configured) ─────────────────────────
   try {
     const args = ['ls', '--json'];
     if (req.query.project) args.push('--project', req.query.project);

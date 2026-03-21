@@ -310,10 +310,13 @@ async function runTask(task) {
 // GET /status — worker status
 app.get('/status', (_req, res) => {
   const busy = currentTaskId !== null;
+  const currentTask = currentTaskId ? tasks.get(currentTaskId) : null;
   res.json({
     workerId: WORKER_ID,
     busy,
     currentTaskId,
+    taskId: currentTaskId,           // alias expected by constellation bar
+    agent: currentTask?.agent || null, // show agent name in busy badge
     taskCount,
     uptime: Math.floor((Date.now() - startedAt) / 1000),
   });
@@ -353,7 +356,7 @@ app.get('/task/:id', (req, res) => {
   });
 });
 
-// GET /task/:id/logs — task logs as text
+// GET /task/:id/logs — task logs as JSON (frontend api() always calls .json())
 app.get('/task/:id/logs', (req, res) => {
   const task = tasks.get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
@@ -361,7 +364,7 @@ app.get('/task/:id/logs', (req, res) => {
   const since = parseInt(req.query.since || '0', 10);
   const lines = task.logs.slice(since);
 
-  res.type('text/plain').send(lines.join('\n'));
+  res.json({ logs: lines.join('\n'), count: task.logs.length, since });
 });
 
 // POST /task/:id/stop — kill running task
