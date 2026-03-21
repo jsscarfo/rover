@@ -7,7 +7,7 @@
 // ── State ───────────────────────────────────────────────
 const state = {
   currentPage: 'tasks',
-  currentTask: null,        // full task inspection object
+  currentTask: null, // full task inspection object
   currentTaskId: null,
   currentTab: 'overview',
   tasks: [],
@@ -16,10 +16,10 @@ const state = {
   constellationTimer: null,
   AUTO_REFRESH_MS: 8000,
   CONSTELLATION_MS: 10000,
-  workers: [],              // latest worker status array
-  drawerWorkerIndex: null,  // which worker is open in the drawer
-  drawerTaskId: null,       // task id being viewed in drawer
-  drawerLogTimer: null,     // polling timer for drawer logs
+  workers: [], // latest worker status array
+  drawerWorkerIndex: null, // which worker is open in the drawer
+  drawerTaskId: null, // task id being viewed in drawer
+  drawerLogTimer: null, // polling timer for drawer logs
 };
 
 // ── Utils ────────────────────────────────────────────────
@@ -48,7 +48,11 @@ async function api(path, method = 'GET', body = null) {
   if (res.status === 401) {
     const data = await res.json().catch(() => ({}));
     if (data.code === 'AUTH_REQUIRED' || data.code === 'INVALID_TOKEN') {
-      showLoginModal(data.code === 'INVALID_TOKEN' ? 'Invalid token. Please try again.' : null);
+      showLoginModal(
+        data.code === 'INVALID_TOKEN'
+          ? 'Invalid token. Please try again.'
+          : null
+      );
       throw new Error('AUTH_REQUIRED');
     }
   }
@@ -63,7 +67,12 @@ async function api(path, method = 'GET', body = null) {
 function fmt(ts) {
   if (!ts) return '—';
   const d = new Date(ts);
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function fmtDuration(startTs, endTs) {
@@ -78,8 +87,13 @@ function fmtDuration(startTs, endTs) {
 
 function statusLabel(s) {
   const map = {
-    NEW: 'New', IN_PROGRESS: 'Running', ITERATING: 'Iterating',
-    COMPLETED: 'Completed', FAILED: 'Failed', MERGED: 'Merged', PUSHED: 'Pushed',
+    NEW: 'New',
+    IN_PROGRESS: 'Running',
+    ITERATING: 'Iterating',
+    COMPLETED: 'Completed',
+    FAILED: 'Failed',
+    MERGED: 'Merged',
+    PUSHED: 'Pushed',
   };
   return map[s] || s;
 }
@@ -120,8 +134,8 @@ function metaItem(label, value, mono = false) {
 function toast(msg, type = 'info') {
   const icons = {
     success: `<svg viewBox="0 0 24 24" fill="none" stroke="#5dd6a0" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`,
-    error:   `<svg viewBox="0 0 24 24" fill="none" stroke="#e87878" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
-    info:    `<svg viewBox="0 0 24 24" fill="none" stroke="var(--teal-light)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12" y2="16"/></svg>`,
+    error: `<svg viewBox="0 0 24 24" fill="none" stroke="#e87878" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
+    info: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--teal-light)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12" y2="16"/></svg>`,
   };
   const el = document.createElement('div');
   el.className = `toast toast-${type}`;
@@ -151,7 +165,7 @@ function showPage(name) {
   const titles = { tasks: 'Tasks', info: 'Rover Store', detail: 'Task Detail' };
   const icons = {
     tasks: `<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>`,
-    info:  `<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="8"/><line x1="12" y1="12" x2="12" y2="16"/>`,
+    info: `<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="8"/><line x1="12" y1="12" x2="12" y2="16"/>`,
     detail: `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>`,
   };
   document.getElementById('topbar-title').innerHTML =
@@ -182,7 +196,8 @@ function stopAutoRefresh() {
 
 function refreshCurrentPage() {
   if (state.currentPage === 'tasks') loadTasks();
-  else if (state.currentPage === 'detail' && state.currentTaskId) loadTaskDetail(state.currentTaskId);
+  else if (state.currentPage === 'detail' && state.currentTaskId)
+    loadTaskDetail(state.currentTaskId);
   else if (state.currentPage === 'info') loadInfo();
   else if (state.currentPage === 'workers') loadConstellationStatus();
 }
@@ -224,22 +239,25 @@ function renderConstellationBar(data) {
   summaryEl.style.display = 'flex';
 
   // Update summary counts
-  document.getElementById('cs-idle').textContent   = data.idle    ?? 0;
-  document.getElementById('cs-busy').textContent   = data.busy    ?? 0;
-  document.getElementById('cs-offline').textContent = (data.total - data.online) ?? 0;
+  document.getElementById('cs-idle').textContent = data.idle ?? 0;
+  document.getElementById('cs-busy').textContent = data.busy ?? 0;
+  document.getElementById('cs-offline').textContent =
+    data.total - data.online ?? 0;
 
   // Re-render badges (keep existing DOM nodes if count is same to avoid flicker)
   const workers = data.workers || [];
   const existingBadges = workersEl.querySelectorAll('.worker-badge');
 
   workers.forEach((w, i) => {
-    const stateClass = w.state === 'idle' ? 'idle' : w.state === 'busy' ? 'busy' : 'offline';
+    const stateClass =
+      w.state === 'idle' ? 'idle' : w.state === 'busy' ? 'busy' : 'offline';
     const label = w.taskId
       ? `W${w.index + 1} · ${escHtml(w.agent || '?')}`
       : `W${w.index + 1}`;
-    const title = w.state === 'busy'
-      ? `Worker ${w.index + 1} — busy (task ${w.taskId})`
-      : `Worker ${w.index + 1} — ${w.state}`;
+    const title =
+      w.state === 'busy'
+        ? `Worker ${w.index + 1} — busy (task ${w.taskId})`
+        : `Worker ${w.index + 1} — ${w.state}`;
 
     let badge = existingBadges[i];
     if (!badge) {
@@ -268,7 +286,10 @@ function renderConstellationBar(data) {
 function startConstellationPolling() {
   stopConstellationPolling();
   loadConstellationStatus(true);
-  state.constellationTimer = setInterval(() => loadConstellationStatus(true), state.CONSTELLATION_MS);
+  state.constellationTimer = setInterval(
+    () => loadConstellationStatus(true),
+    state.CONSTELLATION_MS
+  );
 }
 
 function stopConstellationPolling() {
@@ -285,9 +306,12 @@ async function openWorkerDrawer(workerIndex, taskId) {
   const drawer = document.getElementById('worker-drawer');
   drawer.classList.add('open');
 
-  document.getElementById('drawer-worker-label').textContent = `Worker ${workerIndex + 1} — Task ${taskId}`;
-  document.getElementById('drawer-meta').innerHTML = '<div class="loading-state" style="padding:8px 0"><div class="spinner"></div></div>';
-  document.getElementById('drawer-log').innerHTML = '<div class="loading-state"><div class="spinner"></div> Loading logs…</div>';
+  document.getElementById('drawer-worker-label').textContent =
+    `Worker ${workerIndex + 1} — Task ${taskId}`;
+  document.getElementById('drawer-meta').innerHTML =
+    '<div class="loading-state" style="padding:8px 0"><div class="spinner"></div></div>';
+  document.getElementById('drawer-log').innerHTML =
+    '<div class="loading-state"><div class="spinner"></div> Loading logs…</div>';
   document.getElementById('drawer-stop-btn').style.display = 'none';
 
   await refreshDrawer();
@@ -308,7 +332,12 @@ async function refreshDrawer() {
 
     // Render meta
     if (taskData) {
-      const statusClass = taskData.status === 'running' ? 'IN_PROGRESS' : taskData.status === 'done' ? 'COMPLETED' : 'FAILED';
+      const statusClass =
+        taskData.status === 'running'
+          ? 'IN_PROGRESS'
+          : taskData.status === 'done'
+            ? 'COMPLETED'
+            : 'FAILED';
       document.getElementById('drawer-meta').innerHTML = `
         <div class="drawer-meta-item">
           <div class="drawer-meta-label">Status</div>
@@ -368,7 +397,9 @@ async function stopWorkerTask() {
     toast('Worker task stopped.', 'success');
     await refreshDrawer();
     loadConstellationStatus(true);
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 // ── Worker availability banner (for create modal) ────
@@ -408,7 +439,8 @@ async function loadTasks(silent = false) {
   }
   try {
     const tasks = await api('/api/tasks');
-    state.tasks = Array.isArray(tasks) ? tasks : [];
+    // Normalize all tasks for compatibility
+    state.tasks = Array.isArray(tasks) ? tasks.map(normalizeTask) : [];
     renderTasks(state.tasks);
     updateStats(state.tasks);
     setLastRefresh();
@@ -427,8 +459,12 @@ async function loadTasks(silent = false) {
 
 function updateStats(tasks) {
   const total = tasks.length;
-  const running = tasks.filter(t => ['IN_PROGRESS', 'ITERATING'].includes(t.status)).length;
-  const done = tasks.filter(t => ['COMPLETED', 'MERGED', 'PUSHED'].includes(t.status)).length;
+  const running = tasks.filter(t =>
+    ['IN_PROGRESS', 'ITERATING'].includes(t.status)
+  ).length;
+  const done = tasks.filter(t =>
+    ['COMPLETED', 'MERGED', 'PUSHED'].includes(t.status)
+  ).length;
   const failed = tasks.filter(t => t.status === 'FAILED').length;
 
   document.getElementById('stat-total').textContent = total;
@@ -461,23 +497,25 @@ function renderTasks(tasks) {
 
   // Sort: running first, then by id desc
   const sorted = [...tasks].sort((a, b) => {
-    const running = (s) => ['IN_PROGRESS', 'ITERATING'].includes(s) ? 1 : 0;
-    if (running(b.status) !== running(a.status)) return running(b.status) - running(a.status);
+    const running = s => (['IN_PROGRESS', 'ITERATING'].includes(s) ? 1 : 0);
+    if (running(b.status) !== running(a.status))
+      return running(b.status) - running(a.status);
     return b.id - a.id;
   });
 
-  let rows = sorted.map(t => {
-    const iterData = t.iterationsData?.[t.iterationsData.length - 1];
-    const iterStatus = iterData?.status ? iterData.status() : null;
-    let pct = iterStatus?.progress ?? 0;
-    let step = iterStatus?.currentStep ?? '—';
-    let endTime = t.completedAt || t.failedAt;
-    const duration = fmtDuration(t.startedAt, endTime);
-    let agentDisplay = t.agent || '—';
-    if (t.agent && t.agentModel) agentDisplay = `${t.agent}:${t.agentModel}`;
-    else if (t.agent) agentDisplay = t.agent;
+  let rows = sorted
+    .map(t => {
+      const iterData = t.iterationsData?.[t.iterationsData.length - 1];
+      const iterStatus = iterData?.status ? iterData.status() : null;
+      let pct = iterStatus?.progress ?? 0;
+      let step = iterStatus?.currentStep ?? '—';
+      let endTime = t.completedAt || t.failedAt;
+      const duration = fmtDuration(t.startedAt, endTime);
+      let agentDisplay = t.agent || '—';
+      if (t.agent && t.agentModel) agentDisplay = `${t.agent}:${t.agentModel}`;
+      else if (t.agent) agentDisplay = t.agent;
 
-    return `<tr onclick="openTask(${t.id})" title="Open task ${t.id}">
+      return `<tr onclick="openTask(${t.id})" title="Open task ${t.id}">
       <td><span class="task-id">#${t.id}</span></td>
       <td><span class="task-title">${escHtml(t.title || t.description?.slice(0, 60) || 'Untitled')}</span></td>
       <td><span class="task-agent">${escHtml(agentDisplay)}</span></td>
@@ -491,7 +529,8 @@ function renderTasks(tasks) {
         </div>
       </td>
     </tr>`;
-  }).join('');
+    })
+    .join('');
 
   container.innerHTML = `<div class="task-table-wrap">
     <table class="task-table">
@@ -507,8 +546,14 @@ function renderTasks(tasks) {
 
   // Show row actions on hover
   container.querySelectorAll('tbody tr').forEach(tr => {
-    tr.addEventListener('mouseenter', () => tr.querySelector('.row-actions').style.opacity = '1');
-    tr.addEventListener('mouseleave', () => tr.querySelector('.row-actions').style.opacity = '0');
+    tr.addEventListener(
+      'mouseenter',
+      () => (tr.querySelector('.row-actions').style.opacity = '1')
+    );
+    tr.addEventListener(
+      'mouseleave',
+      () => (tr.querySelector('.row-actions').style.opacity = '0')
+    );
   });
 }
 
@@ -558,36 +603,75 @@ async function openTask(id) {
 async function loadTaskDetail(id, silent = false) {
   try {
     const task = await api(`/api/tasks/${id}`);
-    state.currentTask = task;
-    renderTaskDetail(task);
+    // Normalize task object for compatibility between CLI and worker formats
+    const normalized = normalizeTask(task);
+    state.currentTask = normalized;
+    renderTaskDetail(normalized);
     setLastRefresh();
   } catch (e) {
     if (!silent) toast(e.message, 'error');
   }
 }
 
+// Normalize task object to handle both CLI and worker API formats
+function normalizeTask(task) {
+  return {
+    ...task,
+    // Use description as title if title is missing
+    title: task.title || task.description || task.prompt,
+    // Use description or prompt
+    description: task.description || task.prompt,
+    // Default iterations to 1 if missing
+    iterations: task.iterations || 1,
+    // Use worktreeBranch as branchName if missing
+    branchName: task.branchName || task.worktreeBranch || task.branch,
+    // Use sourceBranch or branch
+    sourceBranch: task.sourceBranch || task.branch,
+    // Use startedAt as createdAt if missing
+    createdAt: task.createdAt || task.startedAt,
+    // Ensure status is uppercase
+    status: task.status ? task.status.toUpperCase() : 'NEW',
+    // Default workflow name
+    workflowName: task.workflowName || task.workflow || '—',
+  };
+}
+
 function renderTaskDetail(task) {
   if (!task) return;
 
   document.getElementById('detail-breadcrumb').textContent = `Task #${task.id}`;
-  document.getElementById('detail-title').textContent = task.title || `Task #${task.id}`;
-  document.getElementById('detail-subtitle').innerHTML = statusBadge(task.status);
-  document.getElementById('detail-description').textContent = task.description || 'No description.';
+  document.getElementById('detail-title').textContent =
+    task.title || `Task #${task.id}`;
+  document.getElementById('detail-subtitle').innerHTML = statusBadge(
+    task.status
+  );
+  document.getElementById('detail-description').textContent =
+    task.description || 'No description.';
 
   // Meta
-  const agent = task.agentDisplay || (task.agent && task.agentModel ? `${task.agent}:${task.agentModel}` : task.agent || '—');
+  const agent =
+    task.agentDisplay ||
+    (task.agent && task.agentModel
+      ? `${task.agent}:${task.agentModel}`
+      : task.agent || '—');
   document.getElementById('detail-meta').innerHTML = [
     metaItem('Status', statusBadge(task.status)),
     metaItem('Agent', escHtml(agent)),
     metaItem('Workflow', escHtml(task.workflowName)),
     metaItem('Iterations', task.iterations),
     metaItem('Branch', `<span class="mono">${escHtml(task.branchName)}</span>`),
-    metaItem('Source Branch', `<span class="mono">${escHtml(task.sourceBranch || '—')}</span>`),
+    metaItem(
+      'Source Branch',
+      `<span class="mono">${escHtml(task.sourceBranch || '—')}</span>`
+    ),
     metaItem('Created', fmt(task.createdAt)),
     metaItem('Started', fmt(task.startedAt)),
     task.completedAt ? metaItem('Completed', fmt(task.completedAt)) : '',
-    task.failedAt    ? metaItem('Failed', fmt(task.failedAt)) : '',
-    metaItem('Duration', fmtDuration(task.startedAt, task.completedAt || task.failedAt)),
+    task.failedAt ? metaItem('Failed', fmt(task.failedAt)) : '',
+    metaItem(
+      'Duration',
+      fmtDuration(task.startedAt, task.completedAt || task.failedAt)
+    ),
   ].join('');
 
   // Action buttons
@@ -643,7 +727,9 @@ function renderTaskDetail(task) {
   // File changes
   const files = task.fileChanges || [];
   if (files.length > 0) {
-    document.getElementById('detail-files').innerHTML = files.map(f => `
+    document.getElementById('detail-files').innerHTML = files
+      .map(
+        f => `
       <div class="file-item">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         <span class="truncate">${escHtml(f.path)}</span>
@@ -652,7 +738,8 @@ function renderTaskDetail(task) {
           <span class="file-del">-${f.deletions}</span>
         </div>
       </div>`
-    ).join('');
+      )
+      .join('');
   } else {
     document.getElementById('detail-files').innerHTML =
       `<div class="text-dim" style="font-size:0.8rem">No file changes recorded yet.</div>`;
@@ -668,8 +755,12 @@ function renderIterations(task) {
   let html = '<div class="timeline">';
   for (let i = 1; i <= count; i++) {
     const isLast = i === count;
-    const dotClass = isLast ?
-      (task.status === 'FAILED' ? 'failed' : ['COMPLETED','MERGED','PUSHED'].includes(task.status) ? 'completed' : 'running')
+    const dotClass = isLast
+      ? task.status === 'FAILED'
+        ? 'failed'
+        : ['COMPLETED', 'MERGED', 'PUSHED'].includes(task.status)
+          ? 'completed'
+          : 'running'
       : 'completed';
     html += `<div class="timeline-item">
       <div class="timeline-dot ${dotClass}"></div>
@@ -688,11 +779,15 @@ function renderIterations(task) {
 
 function switchTab(name) {
   state.currentTab = name;
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document
+    .querySelectorAll('.tab-btn')
+    .forEach(b => b.classList.remove('active'));
   document.getElementById(`tab-${name}`)?.classList.add('active');
 
   ['overview', 'logs', 'diff'].forEach(t => {
-    document.getElementById(`tab-panel-${t}`)?.classList.toggle('hidden', t !== name);
+    document
+      .getElementById(`tab-panel-${t}`)
+      ?.classList.toggle('hidden', t !== name);
   });
 
   if (name === 'logs' && state.currentTaskId) loadLogs();
@@ -713,15 +808,22 @@ async function loadLogs() {
 
 function renderLogs(viewer, raw) {
   const lines = raw.split('\n');
-  viewer.innerHTML = lines.map(line => {
-    let cls = 'log-line';
-    const lo = line.toLowerCase();
-    if (lo.includes('error') || lo.includes('fail')) cls += ' error';
-    else if (lo.includes('success') || lo.includes('complete') || lo.includes('done')) cls += ' success';
-    else if (lo.startsWith('[') || lo.includes(' info ')) cls += ' info';
-    else if (lo.includes('warn')) cls += ' warn';
-    return `<div class="${cls}">${escHtml(line)}</div>`;
-  }).join('');
+  viewer.innerHTML = lines
+    .map(line => {
+      let cls = 'log-line';
+      const lo = line.toLowerCase();
+      if (lo.includes('error') || lo.includes('fail')) cls += ' error';
+      else if (
+        lo.includes('success') ||
+        lo.includes('complete') ||
+        lo.includes('done')
+      )
+        cls += ' success';
+      else if (lo.startsWith('[') || lo.includes(' info ')) cls += ' info';
+      else if (lo.includes('warn')) cls += ' warn';
+      return `<div class="${cls}">${escHtml(line)}</div>`;
+    })
+    .join('');
   viewer.scrollTop = viewer.scrollHeight;
 }
 
@@ -764,20 +866,26 @@ function renderDiff(viewer, data) {
     let cls = 'diff-line';
     let prefix = ' ';
     if (line.startsWith('+++') || line.startsWith('---')) {
-      cls += ' header'; prefix = '';
+      cls += ' header';
+      prefix = '';
     } else if (line.startsWith('@@')) {
-      cls += ' hunk'; prefix = '';
+      cls += ' hunk';
+      prefix = '';
       lineNum = 0;
     } else if (line.startsWith('+')) {
-      cls += ' added'; lineNum++; prefix = '+';
+      cls += ' added';
+      lineNum++;
+      prefix = '+';
     } else if (line.startsWith('-')) {
-      cls += ' removed'; prefix = '−';
+      cls += ' removed';
+      prefix = '−';
     } else {
       lineNum++;
     }
-    const gutter = (lineNum > 0 && !cls.includes('header') && !cls.includes('hunk'))
-      ? `<span class="diff-gutter">${lineNum}</span>`
-      : `<span class="diff-gutter"></span>`;
+    const gutter =
+      lineNum > 0 && !cls.includes('header') && !cls.includes('hunk')
+        ? `<span class="diff-gutter">${lineNum}</span>`
+        : `<span class="diff-gutter"></span>`;
 
     html += `<div class="${cls}">${gutter}<span class="diff-content">${escHtml(line)}</span></div>`;
   });
@@ -795,8 +903,7 @@ async function loadInfo() {
     renderInfo(data);
     setLastRefresh();
   } catch (e) {
-    document.getElementById('info-body').innerHTML =
-      `<div class="empty-state">
+    document.getElementById('info-body').innerHTML = `<div class="empty-state">
         <div class="empty-state-title">Could not load info</div>
         <div class="empty-state-desc">${escHtml(e.message)}</div>
       </div>`;
@@ -833,7 +940,9 @@ function renderInfo(data) {
   } else {
     html += `<div class="card"><div class="card-header"><div class="card-title">Registered Projects</div></div>
       <div class="card-body"><div class="project-list">`;
-    html += projects.map(p => `
+    html += projects
+      .map(
+        p => `
       <div class="project-card">
         <div class="project-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
         <div style="min-width:0;flex:1">
@@ -842,7 +951,8 @@ function renderInfo(data) {
         </div>
         <span class="project-tasks-count">${p.taskCount} task${p.taskCount !== 1 ? 's' : ''}</span>
       </div>`
-    ).join('');
+      )
+      .join('');
     html += `</div></div></div>`;
   }
 
@@ -858,7 +968,9 @@ async function stopTask(id) {
     toast(`Task #${id} stopped.`, 'success');
     loadTasks(true);
     if (state.currentPage === 'detail') loadTaskDetail(id, true);
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 async function deleteTask(id) {
@@ -868,7 +980,9 @@ async function deleteTask(id) {
     toast(`Task #${id} deleted.`, 'success');
     if (state.currentPage === 'detail') showPage('tasks');
     else loadTasks();
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 async function mergeTask(id) {
@@ -878,7 +992,9 @@ async function mergeTask(id) {
     toast(`Task #${id} merged!`, 'success');
     loadTasks(true);
     if (state.currentPage === 'detail') loadTaskDetail(id, true);
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 async function pushTask(id) {
@@ -888,7 +1004,9 @@ async function pushTask(id) {
     toast(`Task #${id} pushed!`, 'success');
     loadTasks(true);
     if (state.currentPage === 'detail') loadTaskDetail(id, true);
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 async function restartTask(id) {
@@ -898,7 +1016,9 @@ async function restartTask(id) {
     toast(`Task #${id} restarted.`, 'success');
     loadTasks(true);
     if (state.currentPage === 'detail') loadTaskDetail(id, true);
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 // ── Login Modal ───────────────────────────────────────────
@@ -937,6 +1057,7 @@ function logout() {
 function openCreateModal() {
   document.getElementById('create-modal').classList.add('open');
   setTimeout(() => document.getElementById('task-description').focus(), 100);
+  updateWorkerAvailBanner();
 }
 
 function closeCreateModal() {
@@ -951,20 +1072,31 @@ async function createTask() {
     return;
   }
 
-  const agent    = document.getElementById('task-agent').value    || undefined;
-  const role     = document.getElementById('task-role').value     || undefined;
-  const model    = document.getElementById('task-model').value.trim() || undefined;
+  const agent = document.getElementById('task-agent').value || undefined;
+  const role = document.getElementById('task-role').value || undefined;
+  const model = document.getElementById('task-model').value.trim() || undefined;
   const priority = document.getElementById('task-priority').value || undefined;
-  const repo     = document.getElementById('task-repo').value.trim()    || undefined;
-  const branch   = document.getElementById('task-branch').value.trim()  || undefined;
-  const project  = document.getElementById('task-project').value.trim() || undefined;
+  const repo = document.getElementById('task-repo').value.trim() || undefined;
+  const branch =
+    document.getElementById('task-branch').value.trim() || undefined;
+  const project =
+    document.getElementById('task-project').value.trim() || undefined;
 
   const btn = document.getElementById('btn-create-task');
   btn.disabled = true;
   btn.innerHTML = `<div class="spinner"></div> Creating…`;
 
   try {
-    const result = await api('/api/tasks', 'POST', { description, agent, role, model, priority, repo, sourceBranch: branch, project });
+    const result = await api('/api/tasks', 'POST', {
+      description,
+      agent,
+      role,
+      model,
+      priority,
+      repo,
+      sourceBranch: branch,
+      project,
+    });
     closeCreateModal();
     document.getElementById('task-description').value = '';
     document.getElementById('task-agent').value = '';
@@ -991,19 +1123,12 @@ async function createTask() {
 }
 
 // Close modal when clicking overlay
-document.getElementById('create-modal').addEventListener('click', function(e) {
+document.getElementById('create-modal').addEventListener('click', function (e) {
   if (e.target === this) closeCreateModal();
 });
 
-// Open create modal — also refresh worker availability banner
-function openCreateModal() {
-  document.getElementById('create-modal').classList.add('open');
-  setTimeout(() => document.getElementById('task-description').focus(), 100);
-  updateWorkerAvailBanner();
-}
-
 // Close login modal when clicking overlay
-document.getElementById('login-modal').addEventListener('click', function(e) {
+document.getElementById('login-modal').addEventListener('click', function (e) {
   if (e.target === this) closeLoginModal();
 });
 
@@ -1036,10 +1161,15 @@ async function init() {
       return;
     }
     if (health.roverCli && !health.roverCli.available) {
-      toast('Rover CLI is not available on this server. Task creation will not work.', 'error');
+      toast(
+        'Rover CLI is not available on this server. Task creation will not work.',
+        'error'
+      );
       console.warn('Rover CLI not found:', health.roverCli);
     }
-  } catch { /* ignore — server might not have health endpoint */ }
+  } catch {
+    /* ignore — server might not have health endpoint */
+  }
 
   const logoutBtn = document.getElementById('btn-logout');
   if (logoutBtn) logoutBtn.style.display = getToken() ? '' : 'none';
