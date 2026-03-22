@@ -482,6 +482,34 @@ app.post('/api/tasks/:id/delete', async (req, res) => {
 
 // Merge a task
 app.post('/api/tasks/:id/merge', async (req, res) => {
+  // Try workers first if configured
+  if (WORKERS.length > 0) {
+    for (const url of WORKERS) {
+      try {
+        const taskRes = await fetch(`${url}/task/${req.params.id}`, {
+          headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
+          signal: AbortSignal.timeout(5000),
+        });
+        if (taskRes.ok) {
+          // This worker has the task — proxy the merge request
+          const mergeRes = await fetch(`${url}/task/${req.params.id}/merge`, {
+            method: 'POST',
+            headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
+            signal: AbortSignal.timeout(120000), // 2 min for clone + merge + push
+          });
+          if (mergeRes.ok) {
+            return res.status(200).json(await mergeRes.json());
+          }
+          const errData = await mergeRes.json();
+          return res.status(mergeRes.status).json(errData);
+        }
+      } catch { /* worker unreachable, try next */ }
+    }
+    // No worker has this task
+    return res.status(404).json({ error: 'Task not found in any worker' });
+  }
+
+  // CLI fallback
   try {
     const args = ['merge', req.params.id, '--json'];
     if (req.query.project) args.push('--project', req.query.project);
@@ -493,6 +521,34 @@ app.post('/api/tasks/:id/merge', async (req, res) => {
 
 // Push a task
 app.post('/api/tasks/:id/push', async (req, res) => {
+  // Try workers first if configured
+  if (WORKERS.length > 0) {
+    for (const url of WORKERS) {
+      try {
+        const taskRes = await fetch(`${url}/task/${req.params.id}`, {
+          headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
+          signal: AbortSignal.timeout(5000),
+        });
+        if (taskRes.ok) {
+          // This worker has the task — proxy the push request
+          const pushRes = await fetch(`${url}/task/${req.params.id}/push`, {
+            method: 'POST',
+            headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
+            signal: AbortSignal.timeout(120000), // 2 min for clone + push
+          });
+          if (pushRes.ok) {
+            return res.status(200).json(await pushRes.json());
+          }
+          const errData = await pushRes.json();
+          return res.status(pushRes.status).json(errData);
+        }
+      } catch { /* worker unreachable, try next */ }
+    }
+    // No worker has this task
+    return res.status(404).json({ error: 'Task not found in any worker' });
+  }
+
+  // CLI fallback
   try {
     const args = ['push', req.params.id, '--json'];
     if (req.body?.message) args.push('-m', req.body.message);

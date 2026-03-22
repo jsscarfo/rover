@@ -348,7 +348,8 @@ async function runTask(task) {
     let diff = '';
     let diffTruncated = false;
     try {
-      const baseBranch = task.baseBranch || 'main';
+      // Use task.branch (the base branch from clone) or default to 'main'
+      const baseBranch = task.branch || 'main';
       let diffResult = '';
 
       // Try: diff against remote base branch
@@ -532,6 +533,98 @@ app.delete('/task/:id', (req, res) => {
   store.delete(task.id);
   store.flush();
   res.json({ deleted: true, taskId: task.id });
+});
+
+// POST /task/:id/merge — merge worktree branch into base branch
+app.post('/task/:id/merge', async (req, res) => {
+  const task = store.get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  if (task.status !== 'COMPLETED') {
+    return res.status(400).json({ error: 'Task must be completed before merge' });
+  }
+
+  const workDir = path.join(tmpdir(), `rover-merge-${task.id}`);
+  
+  try {
+    // Re-clone the repo
+    let repoUrl = task.repo;
+    if (process.env.GITHUB_TOKEN && repoUrl.startsWith('https://github.com/')) {
+      repoUrl = repoUrl.replace('https://github.com/', `https://${process.env.GITHUB_TOKEN}@github.com/`);
+    }
+
+    await execFileAsync('git', ['clone', '--depth=1', repoUrl, workDir], { timeout: 120_000 });
+    
+    // Configure git identity
+    await execFileAsync('git', ['config', 'user.name', 'Rover Worker'], { cwd: workDir });
+    await execFileAsync('git', ['config', 'user.email', 'rover@xaedron.com'], { cwd: workDir });
+
+    // Fetch and checkout the worktree branch
+    await execFileAsync('git', ['fetch', 'origin', task.worktreeBranch], { cwd: workDir });
+    await execFileAsync('git', ['checkout', task.worktreeBranch], { cwd: workDir });
+
+    // Merge into base branch
+    const baseBranch = task.branch || 'main';
+    await execFileAsync('git', ['merge', `origin/${baseBranch}`, '--no-edit'], { cwd: workDir });
+
+    // Push the merge
+    await execFileAsync('git', ['push', 'origin', baseBranch], { cwd: workDir, timeout: 60_000 });
+
+    res.json({ merged: true, taskId: task.id, branch: baseBranch });
+  } catch (err) {
+    res.status(500).json({ error: `Merge failed: ${err.message}` });
+  } finally {
+    // Cleanup
+    try {
+      if (existsSync(workDir)) {
+        rmSync(workDir, { recursive: true, force: true });
+      }
+    } catch { /* ignore cleanup errors */ }
+  }
+});
+
+// POST /task/:id/push — force-push the worktree branch
+app.post('/task/:id/push', async (req, res) => {
+  const task = store.get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  if (task.status !== 'COMPLETED') {
+    return res.status(400).json({ error: 'Task must be completed before push' });
+  }
+
+  const workDir = path.join(tmpdir(), `rover-push-${task.id}`);
+  
+  try {
+    // Re-clone the repo
+    let repoUrl = task.repo;
+    if (process.env.GITHUB_TOKEN && repoUrl.startsWith('https://github.com/')) {
+      repoUrl = repoUrl.replace('https://github.com/', `https://${process.env.GITHUB_TOKEN}@github.com/`);
+    }
+
+    await execFileAsync('git', ['clone', '--depth=1', repoUrl, workDir], { timeout: 120_000 });
+    
+    // Configure git identity
+    await execFileAsync('git', ['config', 'user.name', 'Rover Worker'], { cwd: workDir });
+    await execFileAsync('git', ['config', 'user.email', 'rover@xaedron.com'], { cwd: workDir });
+
+    // Fetch and checkout the worktree branch
+    await execFileAsync('git', ['fetch', 'origin', task.worktreeBranch], { cwd: workDir });
+    await execFileAsync('git', ['checkout', task.worktreeBranch], { cwd: workDir });
+
+    // Force-push
+    await execFileAsync('git', ['push', '-f', 'origin', task.worktreeBranch], { cwd: workDir, timeout: 60_000 });
+
+    res.json({ pushed: true, taskId: task.id, branch: task.worktreeBranch });
+  } catch (err) {
+    res.status(500).json({ error: `Push failed: ${err.message}` });
+  } finally {
+    // Cleanup
+    try {
+      if (existsSync(workDir)) {
+        rmSync(workDir, { recursive: true, force: true });
+      }
+    } catch { /* ignore cleanup errors */ }
+  }
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────
