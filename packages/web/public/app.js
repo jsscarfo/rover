@@ -515,7 +515,7 @@ function renderTasks(tasks) {
       if (t.agent && t.agentModel) agentDisplay = `${t.agent}:${t.agentModel}`;
       else if (t.agent) agentDisplay = t.agent;
 
-      return `<tr onclick="openTask(${t.id})" title="Open task ${t.id}">
+      return `<tr onclick="openTask('${t.id}')" title="Open task ${t.id}">
       <td><span class="task-id">#${t.id}</span></td>
       <td><span class="task-title">${escHtml(t.title || t.description?.slice(0, 60) || 'Untitled')}</span></td>
       <td><span class="task-agent">${escHtml(agentDisplay)}</span></td>
@@ -562,21 +562,21 @@ function actionButtons(t) {
   const isDone = ['COMPLETED', 'MERGED', 'PUSHED', 'FAILED'].includes(t.status);
   let btns = '';
   if (isRunning) {
-    btns += `<button class="btn btn-ghost btn-sm btn-icon" title="Stop" onclick="event.stopPropagation();stopTask(${t.id})">
+    btns += `<button class="btn btn-ghost btn-sm btn-icon" title="Stop" onclick="event.stopPropagation();stopTask('${t.id}')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12"/></svg>
     </button>`;
   }
   if (isDone && t.status !== 'MERGED') {
-    btns += `<button class="btn btn-ghost btn-sm btn-icon" title="Merge" onclick="event.stopPropagation();mergeTask(${t.id})">
+    btns += `<button class="btn btn-ghost btn-sm btn-icon" title="Merge" onclick="event.stopPropagation();mergeTask('${t.id}')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
     </button>`;
   }
   if (t.status === 'FAILED' || t.status === 'NEW') {
-    btns += `<button class="btn btn-ghost btn-sm btn-icon" title="Restart" onclick="event.stopPropagation();restartTask(${t.id})">
+    btns += `<button class="btn btn-ghost btn-sm btn-icon" title="Restart" onclick="event.stopPropagation();restartTask('${t.id}')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-5.26"/></svg>
     </button>`;
   }
-  btns += `<button class="btn btn-danger btn-sm btn-icon" title="Delete" onclick="event.stopPropagation();deleteTask(${t.id})">
+  btns += `<button class="btn btn-danger btn-sm btn-icon" title="Delete" onclick="event.stopPropagation();deleteTask('${t.id}')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
   </button>`;
   return btns;
@@ -691,19 +691,19 @@ function renderTaskDetail(task) {
   </button>`;
 
   if (isRunning) {
-    actions += `<button class="btn btn-ghost btn-sm" onclick="stopTask(${task.id})">
+    actions += `<button class="btn btn-ghost btn-sm" onclick="stopTask('${task.id}')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12"/></svg>
       Stop
     </button>`;
   }
 
   if (isDone && status !== 'MERGED') {
-    actions += `<button class="btn btn-ghost btn-sm" onclick="mergeTask(${task.id})">
+    actions += `<button class="btn btn-ghost btn-sm" onclick="mergeTask('${task.id}')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
       Merge
     </button>`;
     if (status !== 'PUSHED') {
-      actions += `<button class="btn btn-ghost btn-sm" onclick="pushTask(${task.id})">
+      actions += `<button class="btn btn-ghost btn-sm" onclick="pushTask('${task.id}')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         Push
       </button>`;
@@ -711,13 +711,13 @@ function renderTaskDetail(task) {
   }
 
   if (['FAILED', 'NEW'].includes(status)) {
-    actions += `<button class="btn btn-ghost btn-sm" onclick="restartTask(${task.id})">
+    actions += `<button class="btn btn-ghost btn-sm" onclick="restartTask('${task.id}')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-5.26"/></svg>
       Restart
     </button>`;
   }
 
-  actions += `<button class="btn btn-danger btn-sm" onclick="deleteTask(${task.id})">
+  actions += `<button class="btn btn-danger btn-sm" onclick="deleteTask('${task.id}')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
     Delete
   </button>`;

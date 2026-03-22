@@ -99,7 +99,7 @@ Authorization: Bearer <token>
   "description": "Implement feature X by doing Y",
   "repo": "https://github.com/username/repository",  // REQUIRED - full GitHub URL
   "agent": "claude",                                 // optional: claude, gemini, codex
-  "model": "claude-sonnet-4-6-20250620",            // optional: specific model
+  "model": "claude-sonnet-4-6",                     // optional: claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5-20251001
   "sourceBranch": "main",                           // optional: base branch (default: main)
   "project": "/path/to/local/project"               // optional: for CLI fallback only
 }
@@ -212,6 +212,7 @@ Returns: registered projects, task counts, store path.
 | `"repo is required"` | Missing `repo` field | Add `"repo": "https://github.com/user/repo"` |
 | `"All workers busy"` | No idle workers | Wait 30-60 seconds and retry |
 | `"Agent exited with code 1"` | Agent execution failed | Check task logs for details |
+| `"model ... may not exist"` | Invalid model name | Use: `claude-opus-4-6`, `claude-sonnet-4-6`, or `claude-haiku-4-5-20251001` |
 | `"Repository not found"` | Invalid repo URL or no access | Verify GitHub token has access |
 | `"Authentication required"` | Missing/invalid token | Check Authorization header |
 
@@ -223,6 +224,7 @@ Returns: registered projects, task counts, store path.
 5. Common issues:
    - Repository access denied → Check GITHUB_TOKEN
    - API key invalid → Check ANTHROPIC_API_KEY on worker
+   - Invalid model name → Use `claude-opus-4-6`, `claude-sonnet-4-6`, or `claude-haiku-4-5-20251001`
    - Task timeout → Task took > 30 minutes
 
 ## Future: MCP over HTTP (Phase 2)
