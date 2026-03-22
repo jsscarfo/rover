@@ -359,8 +359,28 @@ app.get('/api/tasks/:id/logs', async (req, res) => {
 // Task diff
 app.get('/api/tasks/:id/diff', async (req, res) => {
   if (WORKERS.length > 0) {
-    // Workers don't support diff yet natively in memory API, but we return empty obj so it doesn't crash
-    return res.status(200).json({ diff: '' });
+    for (const url of WORKERS) {
+      try {
+        const taskRes = await fetch(`${url}/task/${req.params.id}`, {
+          headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
+          signal: AbortSignal.timeout(5000),
+        });
+        if (taskRes.ok) {
+          // This worker has the task — get its diff
+          const diffRes = await fetch(`${url}/task/${req.params.id}/diff`, {
+            headers: WORKER_AUTH_HEADER ? { Authorization: WORKER_AUTH_HEADER } : {},
+            signal: AbortSignal.timeout(10000),
+          });
+          if (diffRes.ok) {
+            return res.status(200).json(await diffRes.json());
+          }
+          // Worker has task but diff endpoint failed — return empty
+          return res.status(200).json({ diff: '', diffTruncated: false, taskId: req.params.id });
+        }
+      } catch { /* worker unreachable, try next */ }
+    }
+    // No worker has this task
+    return res.status(200).json({ diff: '', diffTruncated: false, taskId: req.params.id });
   }
 
   try {

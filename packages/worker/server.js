@@ -23,6 +23,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { store } from './storage.js';
 
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
@@ -56,10 +57,7 @@ app.use(authMiddleware);
 
 // ── State ─────────────────────────────────────────────────────────────────
 
-/** @type {Map<string, TaskRecord>} */
-const tasks = new Map();
-
-let currentTaskId = null;
+let currentTaskId = null; // Keep this — it's runtime state, not persisted
 let taskCount = 0;
 const startedAt = Date.now();
 
@@ -82,6 +80,8 @@ const startedAt = Date.now();
  * @property {string|null} error
  * @property {string|null} workDir
  * @property {import('child_process').ChildProcess|null} process
+ * @property {string} diff
+ * @property {boolean} diffTruncated
  */
 
 function createTask(fields) {
@@ -104,6 +104,8 @@ function createTask(fields) {
     error: null,
     workDir: null,
     process: null,
+    diff: '',
+    diffTruncated: false,
   };
 }
 
@@ -152,12 +154,14 @@ async function ensureAgent(agentName, taskLog) {
 // ── Task execution ─────────────────────────────────────────────────────────
 
 async function runTask(task) {
-  const workDir = path.join(tmpdir(), `rover-task-${task.id}`);
+  const taskId = task.id;
+  const workDir = path.join(tmpdir(), `rover-task-${taskId}`);
   task.workDir = workDir;
 
   try {
     // ── CLONING ────────────────────────────────────────────────────────
     task.status = 'CLONING';
+    store.set(taskId, task);
     log(task, `Cloning ${task.repo} into ${workDir}`);
     mkdirSync(workDir, { recursive: true });
 
@@ -178,6 +182,7 @@ async function runTask(task) {
 
     // ── SETUP ──────────────────────────────────────────────────────────
     task.status = 'SETUP';
+    store.set(taskId, task);
 
     // Checkout worktree branch
     log(task, `Creating branch ${task.worktreeBranch}`);
@@ -239,6 +244,7 @@ async function runTask(task) {
 
     // ── RUNNING ────────────────────────────────────────────────────────
     task.status = 'RUNNING';
+    store.set(taskId, task);
     log(task, `Running agent: ${agentBin}`);
 
     const agentEnv = {
@@ -305,6 +311,7 @@ async function runTask(task) {
 
     // ── PUSHING ────────────────────────────────────────────────────────
     task.status = 'PUSHING';
+    store.set(taskId, task);
 
     // Check if there are any changes to commit
     const { stdout: statusOut } = await execFileAsync('git', ['status', '--porcelain'], {
@@ -314,7 +321,7 @@ async function runTask(task) {
     if (statusOut.trim()) {
       log(task, 'Committing changes');
       await execFileAsync('git', ['add', '-A'], { cwd: workDir });
-      await execFileAsync('git', ['commit', '-m', `rover: task ${task.id}`], { cwd: workDir });
+      await execFileAsync('git', ['commit', '-m', `rover: task ${taskId}`], { cwd: workDir });
 
       log(task, `Pushing branch ${task.worktreeBranch}`);
       await execFileAsync('git', ['push', '-f', 'origin', task.worktreeBranch], {
@@ -337,6 +344,60 @@ async function runTask(task) {
     task.error = err.message;
     log(task, `Task FAILED: ${err.message}`);
   } finally {
+    // Capture git diff before cleanup (P1) — use execFile to avoid shell injection
+    let diff = '';
+    let diffTruncated = false;
+    try {
+      const baseBranch = task.baseBranch || 'main';
+      let diffResult = '';
+
+      // Try: diff against remote base branch
+      try {
+        const { stdout } = await execFileAsync('git', ['diff', `origin/${baseBranch}...HEAD`], {
+          cwd: workDir,
+          encoding: 'utf8',
+          maxBuffer: 2 * 1024 * 1024, // 2MB buffer
+        });
+        diffResult = stdout;
+      } catch {
+        // Fallback: diff last commit
+        try {
+          const { stdout } = await execFileAsync('git', ['diff', 'HEAD~1', 'HEAD'], {
+            cwd: workDir,
+            encoding: 'utf8',
+            maxBuffer: 2 * 1024 * 1024,
+          });
+          diffResult = stdout;
+        } catch {
+          // Final fallback: show last commit
+          try {
+            const { stdout } = await execFileAsync('git', ['show', 'HEAD'], {
+              cwd: workDir,
+              encoding: 'utf8',
+              maxBuffer: 2 * 1024 * 1024,
+            });
+            diffResult = stdout;
+          } catch {
+            // No diff available
+          }
+        }
+      }
+
+      const MAX_DIFF_SIZE = 1024 * 1024; // 1MB
+      if (diffResult.length > MAX_DIFF_SIZE) {
+        diff = diffResult.substring(0, MAX_DIFF_SIZE);
+        diffTruncated = true;
+      } else {
+        diff = diffResult;
+      }
+    } catch (err) {
+      console.error(`[${taskId}] Failed to capture diff:`, err.message);
+    }
+
+    // Store diff directly on the task object so the final persist below includes it
+    task.diff = diff;
+    task.diffTruncated = diffTruncated;
+
     // Cleanup workdir
     try {
       if (task.workDir && existsSync(task.workDir)) {
@@ -347,8 +408,12 @@ async function runTask(task) {
       // ignore cleanup errors
     }
 
+    // Persist final task state (includes diff captured above)
+    store.set(taskId, task);
+    store.flush();
+
     // Free the worker slot
-    if (currentTaskId === task.id) {
+    if (currentTaskId === taskId) {
       currentTaskId = null;
     }
   }
@@ -359,7 +424,7 @@ async function runTask(task) {
 // GET /status — worker status
 app.get('/status', (_req, res) => {
   const busy = currentTaskId !== null;
-  const currentTask = currentTaskId ? tasks.get(currentTaskId) : null;
+  const currentTask = currentTaskId ? store.get(currentTaskId) : null;
   res.json({
     workerId: WORKER_ID,
     busy,
@@ -383,7 +448,7 @@ app.post('/task', (req, res) => {
   }
 
   const task = createTask({ ...body, description: body.description || body.prompt });
-  tasks.set(task.id, task);
+  store.set(task.id, task);
   currentTaskId = task.id;
   taskCount++;
 
@@ -395,39 +460,52 @@ app.post('/task', (req, res) => {
 
 // GET /tasks — list all tasks on this worker
 app.get('/tasks', (_req, res) => {
-  const allTasks = Array.from(tasks.values()).map(t => {
+  const allTasks = store.getAll().map(t => {
     const { process: _proc, logs: _logs, ...rest } = t;
-    return { ...rest, logCount: t.logs.length };
+    return { ...rest, logCount: Array.isArray(t.logs) ? t.logs.length : (t.logs ? t.logs.split('\n').length : 0) };
   });
   res.json(allTasks);
 });
 
 // GET /task/:id — task detail
 app.get('/task/:id', (req, res) => {
-  const task = tasks.get(req.params.id);
+  const task = store.get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
 
   const { process: _proc, logs: _logs, ...rest } = task;
   res.json({
     ...rest,
-    logCount: task.logs.length,
+    logCount: Array.isArray(task.logs) ? task.logs.length : (task.logs ? task.logs.split('\n').length : 0),
   });
 });
 
 // GET /task/:id/logs — task logs as JSON (frontend api() always calls .json())
 app.get('/task/:id/logs', (req, res) => {
-  const task = tasks.get(req.params.id);
+  const task = store.get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
 
   const since = parseInt(req.query.since || '0', 10);
-  const lines = task.logs.slice(since);
+  const logsArray = Array.isArray(task.logs) ? task.logs : (task.logs ? task.logs.split('\n') : []);
+  const lines = logsArray.slice(since);
 
-  res.json({ logs: lines.join('\n'), count: task.logs.length, since });
+  res.json({ logs: lines.join('\n'), count: logsArray.length, since });
+});
+
+// GET /task/:id/diff — return the captured git diff
+app.get('/task/:id/diff', (req, res) => {
+  const task = store.get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  res.json({
+    taskId: task.id,
+    diff: task.diff || '',
+    diffTruncated: task.diffTruncated || false,
+    status: task.status
+  });
 });
 
 // POST /task/:id/stop — kill running task
 app.post('/task/:id/stop', (req, res) => {
-  const task = tasks.get(req.params.id);
+  const task = store.get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
 
   if (task.process) {
@@ -445,13 +523,14 @@ app.post('/task/:id/stop', (req, res) => {
 
 // DELETE /task/:id — delete a task
 app.delete('/task/:id', (req, res) => {
-  const task = tasks.get(req.params.id);
+  const task = store.get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
 
   if (task.process) {
     try { task.process.kill('SIGKILL'); } catch {}
   }
-  tasks.delete(task.id);
+  store.delete(task.id);
+  store.flush();
   res.json({ deleted: true, taskId: task.id });
 });
 

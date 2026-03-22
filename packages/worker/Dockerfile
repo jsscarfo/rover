@@ -19,6 +19,10 @@ COPY . ./
 # Ensure the /app directory is owned by the node user
 RUN chown -R node:node /app
 
+# Create persistent storage directory (must be done as root, before USER node)
+RUN mkdir -p /data && chown node:node /data
+ENV STORAGE_PATH=/data
+
 # Claude Code prevents --dangerously-skip-permissions when running as root for security reasons.
 # Switch to the built-in non-root 'node' user to allow Claude CLI unattended execution.
 USER node
