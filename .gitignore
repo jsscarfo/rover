@@ -153,6 +153,13 @@ vite.config.ts.timestamp-*
 # Rover
 .rover
 
+# Session logs and debugging files
+.session-logs/
+*_SUMMARY.md
+*_REPORT.md
+*_VALIDATION.md
+*_CHECKLIST.md
+
 # Extensions
 *.vsix
 
