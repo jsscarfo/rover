@@ -4,6 +4,7 @@ import { execFile, exec } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { wbsLoader } from './lib/wbs-loader.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -258,6 +259,39 @@ async function dispatchToWorker(taskPayload) {
 }
 
 // ── API Routes ────────────────────────────────────────────────────────────
+
+// Get WBS for a project
+app.get('/api/projects/:id/wbs', async (req, res) => {
+  try {
+    const repoUrl = req.query.repo;
+    if (!repoUrl) {
+      return res.status(400).json({ error: 'repo query parameter is required' });
+    }
+    const branch = req.query.branch || 'main';
+    const wbs = await wbsLoader.load(repoUrl, branch);
+    res.json(wbs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get task detail from WBS
+app.get('/api/projects/:id/tasks/:taskId', async (req, res) => {
+  try {
+    const repoUrl = req.query.repo;
+    if (!repoUrl) {
+      return res.status(400).json({ error: 'repo query parameter is required' });
+    }
+    const branch = req.query.branch || 'main';
+    const task = await wbsLoader.getTask(repoUrl, req.params.taskId, branch);
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found in WBS' });
+    }
+    res.json(task);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // List tasks — aggregate from workers when configured, else use local rover CLI
 app.get('/api/tasks', async (req, res) => {

@@ -8,6 +8,7 @@ import {
 } from 'rover-core';
 import { NETWORK_MODE_VALUES } from 'rover-schemas';
 import initCmd from './commands/init.js';
+import { initRoverCommand } from './commands/init-rover.js';
 import cleanupCmd from './commands/cleanup.js';
 import infoCmd from './commands/info.js';
 import listCmd from './commands/list.js';
@@ -258,6 +259,13 @@ export function createProgram(
     .option('-y, --yes', 'Skip all confirmations and run non-interactively')
     .argument('[path]', 'Project path', process.cwd())
     .action(initCmd.action);
+
+  program
+    .command('init-rover')
+    .description('Initialize .rover/ directory structure for V2 architecture')
+    .action(async () => {
+      await initRoverCommand.parseAsync(['node', 'init-rover']);
+    });
 
   program.commandsGroup(colors.cyan('Current tasks:'));
   // Add the ps command for monitoring tasks

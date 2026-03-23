@@ -1,0 +1,18 @@
+You are in the IMPLEMENT phase for task {id}.
+
+Objective: Implement the designed feature according to the technical specifications.
+
+Context:
+{context}
+
+Deliverables:
+{acceptance_criteria}
+
+Instructions:
+1. Review the design document and planning context.
+2. Write clean, maintainable, and well-documented code.
+3. Follow the project's coding standards and best practices.
+4. Implement the required functionality, including error handling and edge cases.
+5. Ensure the code compiles and runs without errors.
+
+When complete, write a summary of your implementation to .rover/sessions/{id}.json and commit with message 'rover: implement complete for {id}'.

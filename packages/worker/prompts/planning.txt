@@ -1,0 +1,15 @@
+You are in the PLANNING phase for task {id}.
+
+Objective: Decompose the feature request into a Work Breakdown Structure (WBS).
+
+Context:
+{context}
+
+Instructions:
+1. Analyze the feature request and existing context.
+2. Break down the feature into logical, manageable modules or subtasks.
+3. Identify dependencies between these modules.
+4. Estimate the complexity or effort for each module.
+5. Output the WBS in JSON format.
+
+When complete, write your summary and the WBS JSON to .rover/sessions/{id}.json and commit with message 'rover: planning complete for {id}'.

@@ -338,6 +338,60 @@ async function runTask(task) {
     task.status = 'COMPLETED';
     task.completedAt = Date.now();
     log(task, `Task completed in ${((task.completedAt - task.startedAt) / 1000).toFixed(1)}s`);
+
+    // ── PERSIST SESSION ────────────────────────────────────────────────
+    try {
+      log(task, 'Persisting session to .rover/sessions/');
+      
+      // Calculate tokens and cost
+      let tokensUsed = 0;
+      let costUSD = 0;
+      
+      // Simple token extraction from logs (Claude Code format)
+      const tokenMatch = task.logs.join('\n').match(/Tokens used: (\d+)/i);
+      if (tokenMatch) {
+        tokensUsed = parseInt(tokenMatch[1], 10);
+        
+        // Calculate cost based on model
+        const model = task.model || 'claude-3-5-sonnet-20241022';
+        if (model.includes('opus')) {
+          costUSD = (tokensUsed / 1000) * 0.015; // Rough estimate
+        } else if (model.includes('sonnet')) {
+          costUSD = (tokensUsed / 1000) * 0.003;
+        } else if (model.includes('haiku')) {
+          costUSD = (tokensUsed / 1000) * 0.00025;
+        }
+      }
+      
+      const sessionData = {
+        sessionId: task.id,
+        taskId: task.id,
+        phase: task.phase || 'implement',
+        status: 'completed',
+        completedAt: new Date(task.completedAt).toISOString(),
+        summary: `Task completed in ${((task.completedAt - task.startedAt) / 1000).toFixed(1)}s`,
+        deliverables: [], // TODO: extract from diff
+        tokensUsed,
+        costUSD
+      };
+      
+      const sessionDir = path.join(workDir, '.rover', 'sessions');
+      mkdirSync(sessionDir, { recursive: true });
+      const sessionPath = path.join(sessionDir, `${task.id}.json`);
+      writeFileSync(sessionPath, JSON.stringify(sessionData, null, 2));
+      
+      // Git commit and push
+      await execFileAsync('git', ['add', '.rover/'], { cwd: workDir });
+      await execFileAsync('git', ['commit', '-m', `rover: ${sessionData.phase} complete for ${task.id}`], { cwd: workDir });
+      await execFileAsync('git', ['push', 'origin', task.worktreeBranch], {
+        cwd: workDir,
+        timeout: 60_000,
+        env: agentEnv,
+      });
+      log(task, 'Session persisted and pushed');
+    } catch (err) {
+      log(task, `Failed to persist session: ${err.message}`);
+    }
   } catch (err) {
     task.status = 'FAILED';
     task.failedAt = Date.now();
@@ -457,6 +511,53 @@ app.post('/task', (req, res) => {
   runTask(task);
 
   return res.status(202).json({ accepted: true, taskId: task.id });
+});
+
+// POST /task/:id/phase/:phase — accept a new task for a specific phase
+app.post('/task/:id/phase/:phase', (req, res) => {
+  if (currentTaskId !== null) {
+    return res.status(409).json({ error: 'Worker is busy', currentTaskId });
+  }
+
+  const body = req.body || {};
+  if (!body.repo) {
+    return res.status(400).json({ error: 'repo is required' });
+  }
+
+  const taskId = req.params.id;
+  const phase = req.params.phase;
+  
+  // Load phase prompt
+  let promptTemplate = '';
+  try {
+    promptTemplate = readFileSync(path.join(__dirname, 'prompts', `${phase}.txt`), 'utf8');
+  } catch (err) {
+    return res.status(400).json({ error: `Invalid phase or missing prompt template: ${phase}` });
+  }
+  
+  // Replace placeholders
+  const prompt = promptTemplate
+    .replace(/\{id\}/g, taskId)
+    .replace(/\{context\}/g, body.context || 'No context provided.')
+    .replace(/\{acceptance_criteria\}/g, body.acceptanceCriteria || 'No specific criteria provided.');
+
+  const task = createTask({ 
+    ...body, 
+    taskId,
+    prompt,
+    description: `Phase: ${phase} for task ${taskId}`
+  });
+  
+  task.phase = phase; // Store phase on task object
+  
+  store.set(task.id, task);
+  currentTaskId = task.id;
+  taskCount++;
+
+  // Execute asynchronously — do not await
+  runTask(task);
+
+  return res.status(202).json({ accepted: true, taskId: task.id, phase });
 });
 
 // GET /tasks — list all tasks on this worker

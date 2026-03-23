@@ -1,0 +1,15 @@
+You are in the DESIGN phase for task {id}.
+
+Objective: Design the module structure and architecture for the planned feature.
+
+Context:
+{context}
+
+Instructions:
+1. Review the WBS and planning context.
+2. Design the software architecture, including data models, API endpoints, and component interactions.
+3. Identify necessary libraries, frameworks, or tools.
+4. Create a detailed technical specification or design document.
+5. Consider edge cases, error handling, and performance implications.
+
+When complete, write your design document to .rover/memories/tasks/{id}/design.md, update the session summary in .rover/sessions/{id}.json, and commit with message 'rover: design complete for {id}'.

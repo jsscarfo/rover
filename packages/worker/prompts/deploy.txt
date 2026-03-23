@@ -1,0 +1,15 @@
+You are in the DEPLOY phase for task {id}.
+
+Objective: Prepare the implemented and tested feature for deployment.
+
+Context:
+{context}
+
+Instructions:
+1. Review the implementation, testing, and design documents.
+2. Create a deployment plan or script.
+3. Identify any necessary configuration changes or environment variables.
+4. Document the deployment process and any potential risks.
+5. Create a rollback plan in case of deployment failure.
+
+When complete, write a summary of your deployment plan to .rover/sessions/{id}.json and commit with message 'rover: deploy complete for {id}'.

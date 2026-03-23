@@ -1,0 +1,15 @@
+You are in the TEST phase for task {id}.
+
+Objective: Write and execute tests to verify the implemented feature.
+
+Context:
+{context}
+
+Instructions:
+1. Review the implementation and design documents.
+2. Write unit tests for individual components or functions.
+3. Write integration tests to verify interactions between components.
+4. Ensure all tests pass and provide adequate code coverage.
+5. Document any known issues or limitations.
+
+When complete, write a summary of your testing efforts to .rover/sessions/{id}.json and commit with message 'rover: test complete for {id}'.
