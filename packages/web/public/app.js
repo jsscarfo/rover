@@ -100,6 +100,7 @@ function statusLabel(s) {
     FAILED: 'Failed',
     MERGED: 'Merged',
     PUSHED: 'Pushed',
+    DRAFT: 'Draft',
   };
   return map[s] || s;
 }
@@ -544,12 +545,70 @@ async function loadProjectTasks(project) {
     project.repos?.some(r => t.repo === r || t.repo?.includes(r.replace('https://github.com/', '')))
   );
 
+  // Get draft tasks for this project
+  const draftTasks = getDraftTasks().filter(d => d.projectId === project.id);
+
   project.tasks = projectTasks;
   updateProject(project.id, { tasks: projectTasks });
 
   const container = document.getElementById('project-tasks-list');
-  if (projectTasks.length === 0) {
-    container.innerHTML = `<div class="empty-state">
+
+  let html = '';
+
+  // Show draft tasks section if any exist
+  if (draftTasks.length > 0) {
+    html += `
+      <div class="card mb-4" style="border-color: var(--status-new)">
+        <div class="card-header" style="background: rgba(74, 159, 212, 0.1)">
+          <div class="card-title" style="color: var(--status-new)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="margin-right: 8px">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+            Draft Tasks from Director Audit (${draftTasks.length})
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="task-table-wrap">
+            <table class="task-table">
+              <thead>
+                <tr>
+                  <th>Task</th>
+                  <th>Repository</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${draftTasks.map(d => `
+                  <tr>
+                    <td><span class="task-title">${escHtml(d.title)}</span></td>
+                    <td><span class="task-repo">${escHtml(d.repo?.replace('https://github.com/', '') || '—')}</span></td>
+                    <td><span class="status-badge" style="background: ${d.priority === 'p0' ? 'var(--status-failed)' : 'var(--status-new)'}; color: white; text-transform: uppercase; font-size: 0.7rem; padding: 2px 8px; border-radius: 4px">${escHtml(d.priority)}</span></td>
+                    <td>${statusBadge('DRAFT')}</td>
+                    <td>
+                      <button class="btn btn-primary btn-sm" onclick="launchDraftTask('${d.id}')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+                          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                        </svg>
+                        Launch
+                      </button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Show active tasks
+  if (projectTasks.length === 0 && draftTasks.length === 0) {
+    html += `<div class="empty-state">
       <div class="empty-state-title">No tasks yet</div>
       <div class="empty-state-desc">Create a task to start work on this project.</div>
       <button class="btn btn-primary btn-sm" onclick="openCreateTaskModal()">
@@ -559,9 +618,11 @@ async function loadProjectTasks(project) {
         New Task
       </button>
     </div>`;
-  } else {
-    container.innerHTML = renderTaskTable(projectTasks);
+  } else if (projectTasks.length > 0) {
+    html += renderTaskTable(projectTasks);
   }
+
+  container.innerHTML = html;
 
   // Update worker assignments
   const assignments = state.workers
@@ -691,6 +752,10 @@ This audit will guide the worker pool dispatch plan.`,
         directorTaskId: result.taskId,
       });
       toast(`Director dispatched (Task: ${result.taskId})`, 'success');
+
+      // Start polling for task completion to auto-parse audit
+      pollForDirectorCompletion(result.taskId, project.id);
+
       loadProjects();
     }
   } catch (e) {
@@ -1002,7 +1067,16 @@ function updateStats(tasks) {
 function actionButtons(t) {
   const isRunning = ['IN_PROGRESS', 'ITERATING'].includes(t.status);
   const isDone = ['COMPLETED', 'MERGED', 'PUSHED', 'FAILED'].includes(t.status);
+  const isDraft = t.status === 'DRAFT';
   let btns = '';
+
+  if (isDraft) {
+    btns += `<button class="btn btn-primary btn-sm" title="Launch Task" onclick="event.stopPropagation();launchDraftTask('${t.id}')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Launch
+    </button>`;
+  }
+
   if (isRunning) {
     btns += `<button class="btn btn-ghost btn-sm btn-icon" title="Stop" onclick="event.stopPropagation();stopTask('${t.id}')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12"/></svg>
@@ -1013,7 +1087,8 @@ function actionButtons(t) {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
     </button>`;
   }
-  if (t.status === 'FAILED' || t.status === 'NEW') {
+  // Restart button for completed or failed tasks
+  if (t.status === 'FAILED' || t.status === 'COMPLETED' || t.status === 'PUSHED') {
     btns += `<button class="btn btn-ghost btn-sm btn-icon" title="Restart" onclick="event.stopPropagation();restartTask('${t.id}')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-5.26"/></svg>
     </button>`;
@@ -1022,6 +1097,181 @@ function actionButtons(t) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
   </button>`;
   return btns;
+}
+
+// Launch a draft task
+async function launchDraftTask(draftId) {
+  const drafts = getDraftTasks();
+  const draft = drafts.find(d => d.id === draftId);
+  if (!draft) {
+    toast('Draft task not found', 'error');
+    return;
+  }
+
+  try {
+    const result = await api('/api/tasks', 'POST', {
+      description: draft.description,
+      repo: draft.repo,
+      agent: draft.agent || 'claude',
+      model: draft.model,
+      priority: draft.priority || 'standard',
+    });
+
+    if (result.accepted) {
+      // Remove from drafts
+      const updatedDrafts = drafts.filter(d => d.id !== draftId);
+      saveDraftTasks(updatedDrafts);
+      toast(`Task launched: ${result.taskId}`, 'success');
+      refreshCurrentPage();
+    }
+  } catch (e) {
+    toast(`Failed to launch task: ${e.message}`, 'error');
+  }
+}
+
+// Draft task storage
+function getDraftTasks() {
+  const stored = localStorage.getItem('rover_draft_tasks');
+  return stored ? JSON.parse(stored) : [];
+}
+
+function saveDraftTasks(drafts) {
+  localStorage.setItem('rover_draft_tasks', JSON.stringify(drafts));
+}
+
+function addDraftTask(draft) {
+  const drafts = getDraftTasks();
+  draft.id = `draft_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  draft.status = 'DRAFT';
+  draft.createdAt = new Date().toISOString();
+  drafts.push(draft);
+  saveDraftTasks(drafts);
+  return draft;
+}
+
+// Poll for Director task completion and auto-parse audit
+async function pollForDirectorCompletion(taskId, projectId) {
+  const maxAttempts = 120; // 10 minutes at 5-second intervals
+  let attempts = 0;
+
+  const poll = async () => {
+    attempts++;
+    if (attempts > maxAttempts) {
+      console.log('Polling timeout for Director task', taskId);
+      return;
+    }
+
+    try {
+      const task = await api(`/api/tasks/${taskId}`);
+
+      if (task.status === 'COMPLETED') {
+        // Task completed - fetch logs to find audit content
+        const logs = await api(`/api/tasks/${taskId}/logs`).catch(() => null);
+
+        if (logs) {
+          // Try to parse audit from logs
+          const auditMatch = logs.match(/## ROVER PROJECT AUDIT[\s\S]*?(?=##|$)/);
+          if (auditMatch) {
+            const tasks = parseAuditAndCreateDraftTasks(auditMatch[0], projectId);
+            toast(`${tasks.length} tasks identified from Director audit`, 'success');
+
+            // Update project status
+            updateProject(projectId, { status: 'audit-complete' });
+
+            // Refresh project view if currently viewing this project
+            if (state.currentProjectId === projectId) {
+              loadProjectDetail(projectId);
+            }
+            return;
+          }
+        }
+
+        // If we couldn't parse from logs, update status anyway
+        updateProject(projectId, { status: 'audit-complete' });
+        toast('Director audit complete. View task logs for details.', 'success');
+        return;
+      }
+
+      if (task.status === 'FAILED') {
+        updateProject(projectId, { status: 'audit-failed' });
+        toast('Director audit failed. Check task logs for errors.', 'error');
+        return;
+      }
+
+      // Still running - poll again in 5 seconds
+      setTimeout(poll, 5000);
+    } catch (e) {
+      console.error('Error polling Director task:', e);
+      // Retry on error
+      setTimeout(poll, 5000);
+    }
+  };
+
+  // Start polling after a short delay
+  setTimeout(poll, 5000);
+}
+
+// Parse audit markdown and create draft tasks
+function parseAuditAndCreateDraftTasks(auditContent, projectId) {
+  const tasks = [];
+
+  // Extract tasks from the "Work Items Identified" section
+  // Look for table rows with task information
+  const taskRegex = /\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|/g;
+  let match;
+
+  // Parse P0 Frontend work items
+  const frontendSection = auditContent.match(/### 6\.1 Phase 8: Frontend Consolidation[\s\S]*?(?=###|$)/);
+  if (frontendSection) {
+    const frontendTasks = [
+      { name: 'Café Modal', repo: 'FPX-Laureline-Frontend', priority: 'P0' },
+      { name: 'Guest Management UI', repo: 'FPX-Laureline-Frontend', priority: 'P0' },
+      { name: 'Onboarding Flow', repo: 'FPX-Laureline-Frontend', priority: 'P0' },
+      { name: 'Profile Page fixes', repo: 'FPX-Laureline-Frontend', priority: 'P0' },
+      { name: 'Password Reset flow', repo: 'FPX-Laureline-Frontend', priority: 'P0' },
+    ];
+
+    frontendTasks.forEach(task => {
+      tasks.push({
+        title: task.name,
+        description: `Implement ${task.name} for FPX Laureline Frontend. Priority: ${task.priority}. From Director audit.`,
+        repo: `https://github.com/jsscarfo/${task.repo}`,
+        agent: 'claude',
+        model: 'claude-opus-4-6-20250620',
+        priority: task.priority.toLowerCase(),
+        projectId: projectId,
+        source: 'director-audit',
+      });
+    });
+  }
+
+  // Parse P0 Google Home tasks
+  const googleHomeSection = auditContent.match(/### 6\.2 Phase 9: Google Home Facility Automation[\s\S]*?(?=###|$)/);
+  if (googleHomeSection) {
+    const googleHomeTasks = [
+      { name: 'Space power backend workflows', repo: 'FPX-Laureline' },
+      { name: 'Facility Controller Android app', repo: 'FPX-Laureline' },
+      { name: 'Emulator hosting + FCM relay', repo: 'FPX-Laureline' },
+    ];
+
+    googleHomeTasks.forEach(task => {
+      tasks.push({
+        title: task.name,
+        description: `Implement ${task.name} for Google Home integration. Priority: P0. From Director audit.`,
+        repo: `https://github.com/jsscarfo/${task.repo}`,
+        agent: 'claude',
+        model: 'claude-opus-4-6-20250620',
+        priority: 'p0',
+        projectId: projectId,
+        source: 'director-audit',
+      });
+    });
+  }
+
+  // Create all draft tasks
+  tasks.forEach(task => addDraftTask(task));
+
+  return tasks;
 }
 
 // ── Task Detail Page ────────────────────────────────────
