@@ -1460,3 +1460,370 @@ body::after {
   border: 1px solid rgba(74, 159, 212, 0.2);
   color: var(--text-3);
 }
+/* ── Projects Grid ───────────────────────────────────── */
+
+.projects-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-5);
+}
+
+.project-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+
+.project-card:hover {
+  border-color: var(--border-hi);
+  box-shadow: var(--shadow-card);
+  transform: translateY(-2px);
+}
+
+.project-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+
+.project-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-600);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--teal-light);
+}
+
+.project-card-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.project-card-status {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--bg-600);
+}
+
+.project-card-status.status-loading { color: var(--text-3); }
+.project-card-status.status-audit-running { color: var(--status-in-progress); }
+.project-card-status.status-ready { color: var(--status-completed); }
+.project-card-status.status-error { color: var(--status-failed); }
+
+.project-card-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-1);
+  margin-bottom: var(--space-2);
+}
+
+.project-card-repo {
+  font-size: 0.8rem;
+  color: var(--text-3);
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: var(--space-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-card-meta {
+  display: flex;
+  gap: var(--space-2);
+  font-size: 0.75rem;
+  color: var(--text-3);
+}
+
+/* ── Repository List ─────────────────────────────────── */
+
+.repo-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.repo-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-800);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.repo-item-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-600);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+
+.repo-item-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.repo-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.repo-item-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.repo-item-url {
+  font-size: 0.75rem;
+  color: var(--text-3);
+  font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.repo-item-type .badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--teal);
+  color: white;
+}
+
+/* ── Worker Assignments ──────────────────────────────── */
+
+.worker-assignments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.worker-assignment {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-800);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+}
+
+.worker-assignment-worker {
+  font-weight: 600;
+  color: var(--teal-light);
+  font-family: 'JetBrains Mono', monospace;
+  min-width: 40px;
+}
+
+.worker-assignment-task {
+  flex: 1;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.worker-assignment-repo {
+  color: var(--text-3);
+  font-size: 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── Chat Interface ──────────────────────────────────── */
+
+.chat-message {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.chat-message:last-child {
+  margin-bottom: 0;
+}
+
+.chat-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-600);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+
+.chat-message.director .chat-avatar {
+  background: var(--teal);
+  color: white;
+}
+
+.chat-message.user .chat-avatar {
+  background: var(--bg-500);
+  color: var(--text-1);
+}
+
+.chat-message.agent .chat-avatar {
+  background: var(--status-iterating);
+  color: white;
+}
+
+.chat-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+
+.chat-message.director .chat-header {
+  color: var(--teal-light);
+}
+
+.chat-body {
+  font-size: 0.9rem;
+  color: var(--text-1);
+  line-height: 1.6;
+}
+
+.chat-body ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.chat-body li {
+  margin: 4px 0;
+}
+
+/* ── Director Page ───────────────────────────────────── */
+
+.director-project-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3);
+  background: var(--bg-800);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all var(--dur-fast);
+  margin-bottom: var(--space-2);
+}
+
+.director-project-item:hover {
+  border-color: var(--border-mid);
+}
+
+.director-project-name {
+  font-weight: 500;
+  color: var(--text-1);
+}
+
+.director-project-status {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* ── Worker Status Grid ─────────────────────────────── */
+
+.worker-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: var(--space-2);
+}
+
+.worker-status-item {
+  text-align: center;
+  padding: var(--space-3);
+  background: var(--bg-800);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.worker-status-item.idle {
+  border-color: var(--status-completed);
+}
+
+.worker-status-item.busy {
+  border-color: var(--status-in-progress);
+}
+
+.worker-status-item.offline {
+  opacity: 0.5;
+}
+
+.worker-status-id {
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-1);
+  margin-bottom: 4px;
+}
+
+.worker-status-state {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+
+.worker-status-task {
+  font-size: 0.65rem;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-3);
+}
+
+/* ── Workers Table ───────────────────────────────────── */
+
+.workers-table-wrap {
+  overflow-x: auto;
+}
+
+/* ── Task Repo Column ────────────────────────────────── */
+
+.task-repo {
+  font-size: 0.78rem;
+  color: var(--text-3);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── Navigation Badge Dot ────────────────────────────── */
+
+.nav-badge-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-in-progress);
+  margin-left: auto;
+}

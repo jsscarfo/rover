@@ -1,25 +1,31 @@
 /* ─────────────────────────────────────────────────────────
-   Rover Web Dashboard — SPA Application
+   Rover Web Dashboard — Director-as-Orchestrator Edition
    ─────────────────────────────────────────────────────── */
 
 'use strict';
 
 // ── State ───────────────────────────────────────────────
 const state = {
-  currentPage: 'tasks',
-  currentTask: null, // full task inspection object
+  currentPage: 'projects',
+  currentTask: null,
   currentTaskId: null,
   currentTab: 'overview',
+  currentProjectTab: 'overview',
+  currentProjectId: null,
   tasks: [],
+  projects: [], // New: loaded projects with Director ownership
   info: null,
   autoRefreshTimer: null,
   constellationTimer: null,
   AUTO_REFRESH_MS: 8000,
   CONSTELLATION_MS: 10000,
-  workers: [], // latest worker status array
-  drawerWorkerIndex: null, // which worker is open in the drawer
-  drawerTaskId: null, // task id being viewed in drawer
-  drawerLogTimer: null, // polling timer for drawer logs
+  workers: [],
+  drawerWorkerIndex: null,
+  drawerTaskId: null,
+  drawerLogTimer: null,
+  directorChat: [], // New: main director conversation
+  projectChats: {}, // New: per-project director conversations
+  taskConversations: {}, // New: per-task agent conversations
 };
 
 // ── Utils ────────────────────────────────────────────────
@@ -116,10 +122,10 @@ function progressBar(pct, status) {
 
 function escHtml(s = '') {
   return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/&/g, '&')
+    .replace(/</g, '<')
+    .replace(/>/g, '>')
+    .replace(/"/g, '"');
 }
 
 function metaItem(label, value, mono = false) {
@@ -150,29 +156,42 @@ function toast(msg, type = 'info') {
 // ── Navigation ────────────────────────────────────────────
 
 function showPage(name) {
-  // hide all, show target
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(`page-${name}`)?.classList.add('active');
 
-  // update nav
   document.querySelectorAll('.nav-item[data-page]').forEach(n => {
     n.classList.toggle('active', n.dataset.page === name);
   });
 
   state.currentPage = name;
 
-  // update topbar
-  const titles = { tasks: 'Tasks', info: 'Rover Store', detail: 'Task Detail' };
+  const titles = {
+    projects: 'Projects',
+    'project-detail': 'Project Detail',
+    director: 'Director Chat',
+    workers: 'Workers',
+    tasks: 'All Tasks',
+    detail: 'Task Detail',
+    info: 'Rover Store'
+  };
   const icons = {
+    projects: `<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>`,
+    'project-detail': `<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>`,
+    director: `<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>`,
+    workers: `<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>`,
     tasks: `<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>`,
-    info: `<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="8"/><line x1="12" y1="12" x2="12" y2="16"/>`,
     detail: `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>`,
+    info: `<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="8"/><line x1="12" y1="12" x2="12" y2="16"/>`,
   };
   document.getElementById('topbar-title').innerHTML =
     `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icons[name] || ''}</svg>${titles[name] || ''}`;
 
-  if (name === 'info') loadInfo();
+  // Load page data
+  if (name === 'projects') loadProjects();
+  if (name === 'director') loadDirectorPage();
+  if (name === 'workers') loadWorkersPage();
   if (name === 'tasks') loadTasks();
+  if (name === 'info') loadInfo();
 }
 
 // ── Auto-refresh ─────────────────────────────────────────
@@ -180,9 +199,13 @@ function showPage(name) {
 function startAutoRefresh() {
   stopAutoRefresh();
   state.autoRefreshTimer = setInterval(() => {
+    if (state.currentPage === 'projects') loadProjects(true);
     if (state.currentPage === 'tasks') loadTasks(true);
     if (state.currentPage === 'detail' && state.currentTaskId) {
       loadTaskDetail(state.currentTaskId, true);
+    }
+    if (state.currentPage === 'project-detail' && state.currentProjectId) {
+      loadProjectDetail(state.currentProjectId, true);
     }
   }, state.AUTO_REFRESH_MS);
 
@@ -195,11 +218,15 @@ function stopAutoRefresh() {
 }
 
 function refreshCurrentPage() {
-  if (state.currentPage === 'tasks') loadTasks();
+  if (state.currentPage === 'projects') loadProjects();
+  else if (state.currentPage === 'project-detail' && state.currentProjectId)
+    loadProjectDetail(state.currentProjectId);
+  else if (state.currentPage === 'director') loadDirectorPage();
+  else if (state.currentPage === 'workers') loadWorkersPage();
+  else if (state.currentPage === 'tasks') loadTasks();
   else if (state.currentPage === 'detail' && state.currentTaskId)
     loadTaskDetail(state.currentTaskId);
   else if (state.currentPage === 'info') loadInfo();
-  else if (state.currentPage === 'workers') loadConstellationStatus();
 }
 
 function setLastRefresh() {
@@ -212,12 +239,10 @@ function setLastRefresh() {
 async function loadConstellationStatus(silent = false) {
   try {
     const data = await api('/api/constellation/status');
-    // data: { total, online, idle, busy, workers: [{index, url, state, taskId, agent}] }
     state.workers = data.workers || [];
     renderConstellationBar(data);
     return data;
   } catch {
-    // workers not configured or endpoint not available — hide bar content
     if (!silent) renderConstellationBar(null);
   }
 }
@@ -228,7 +253,6 @@ function renderConstellationBar(data) {
   const placeholder = document.getElementById('worker-placeholder');
 
   if (!data || !data.total) {
-    // No workers configured
     if (placeholder) placeholder.style.display = '';
     workersEl.querySelectorAll('.worker-badge').forEach(b => b.remove());
     summaryEl.style.display = 'none';
@@ -238,13 +262,11 @@ function renderConstellationBar(data) {
   if (placeholder) placeholder.style.display = 'none';
   summaryEl.style.display = 'flex';
 
-  // Update summary counts
   document.getElementById('cs-idle').textContent = data.idle ?? 0;
   document.getElementById('cs-busy').textContent = data.busy ?? 0;
   document.getElementById('cs-offline').textContent =
     data.total - data.online ?? 0;
 
-  // Re-render badges (keep existing DOM nodes if count is same to avoid flicker)
   const workers = data.workers || [];
   const existingBadges = workersEl.querySelectorAll('.worker-badge');
 
@@ -277,7 +299,6 @@ function renderConstellationBar(data) {
     }
   });
 
-  // Remove extra badges
   for (let i = workers.length; i < existingBadges.length; i++) {
     existingBadges[i].remove();
   }
@@ -299,138 +320,577 @@ function stopConstellationPolling() {
 
 // ── Worker Drawer ─────────────────────────────────────
 
-async function openWorkerDrawer(workerIndex, taskId) {
-  state.drawerWorkerIndex = workerIndex;
+async function openWorkerDrawer(index, taskId) {
+  state.drawerWorkerIndex = index;
   state.drawerTaskId = taskId;
-
   const drawer = document.getElementById('worker-drawer');
   drawer.classList.add('open');
+  document.getElementById('drawer-worker-label').textContent = `Worker ${index + 1}`;
 
-  document.getElementById('drawer-worker-label').textContent =
-    `Worker ${workerIndex + 1} — Task ${taskId}`;
-  document.getElementById('drawer-meta').innerHTML =
-    '<div class="loading-state" style="padding:8px 0"><div class="spinner"></div></div>';
-  document.getElementById('drawer-log').innerHTML =
-    '<div class="loading-state"><div class="spinner"></div> Loading logs…</div>';
-  document.getElementById('drawer-stop-btn').style.display = 'none';
+  // Find worker info
+  const worker = state.workers.find(w => w.index === index);
+  document.getElementById('drawer-meta').innerHTML = worker
+    ? `<span>Task: <code>${escHtml(taskId || '—')}</code></span>
+       <span>Agent: ${escHtml(worker.agent || '—')}</span>
+       <span>State: ${escHtml(worker.state)}</span>`
+    : '';
 
-  await refreshDrawer();
-  startDrawerPolling();
-}
+  // Show/hide stop button based on task status
+  const stopBtn = document.getElementById('drawer-stop-btn');
+  stopBtn.style.display = taskId ? '' : 'none';
 
-async function refreshDrawer() {
-  const workerIndex = state.drawerWorkerIndex;
-  const taskId = state.drawerTaskId;
-  if (workerIndex === null || taskId === null) return;
-
-  try {
-    // Fetch task info
-    const [taskData, logsData] = await Promise.all([
-      api(`/api/workers/${workerIndex}/task/${taskId}`).catch(() => null),
-      api(`/api/workers/${workerIndex}/task/${taskId}/logs`).catch(() => null),
-    ]);
-
-    // Render meta
-    if (taskData) {
-      const statusClass =
-        taskData.status === 'running'
-          ? 'IN_PROGRESS'
-          : taskData.status === 'done'
-            ? 'COMPLETED'
-            : 'FAILED';
-      document.getElementById('drawer-meta').innerHTML = `
-        <div class="drawer-meta-item">
-          <div class="drawer-meta-label">Status</div>
-          <div class="drawer-meta-value">${statusBadge(statusClass)}</div>
-        </div>
-        <div class="drawer-meta-item">
-          <div class="drawer-meta-label">Agent</div>
-          <div class="drawer-meta-value">${escHtml(taskData.agent || '—')}</div>
-        </div>
-        <div class="drawer-meta-item">
-          <div class="drawer-meta-label">Task ID</div>
-          <div class="drawer-meta-value mono">${escHtml(taskId)}</div>
-        </div>
-        ${taskData.repo ? `<div class="drawer-meta-item"><div class="drawer-meta-label">Repo</div><div class="drawer-meta-value mono" style="font-size:0.7rem;word-break:break-all">${escHtml(taskData.repo)}</div></div>` : ''}
-      `;
-
-      // Show/hide stop button
-      const stopBtn = document.getElementById('drawer-stop-btn');
-      stopBtn.style.display = taskData.status === 'running' ? '' : 'none';
-    }
-
-    // Render logs
-    if (logsData) {
-      const raw = logsData.logs || '';
-      const logEl = document.getElementById('drawer-log');
-      renderLogs(logEl, raw);
-    }
-  } catch (e) {
-    console.warn('Drawer refresh error:', e);
-  }
-}
-
-function startDrawerPolling() {
-  stopDrawerPolling();
-  state.drawerLogTimer = setInterval(refreshDrawer, 3000);
-}
-
-function stopDrawerPolling() {
+  await loadDrawerLogs();
   if (state.drawerLogTimer) clearInterval(state.drawerLogTimer);
-  state.drawerLogTimer = null;
+  state.drawerLogTimer = setInterval(loadDrawerLogs, 3000);
 }
 
 function closeWorkerDrawer() {
   document.getElementById('worker-drawer').classList.remove('open');
-  stopDrawerPolling();
+  if (state.drawerLogTimer) clearInterval(state.drawerLogTimer);
+  state.drawerLogTimer = null;
   state.drawerWorkerIndex = null;
   state.drawerTaskId = null;
 }
 
-async function stopWorkerTask() {
-  const wi = state.drawerWorkerIndex;
-  const tid = state.drawerTaskId;
-  if (wi === null || tid === null) return;
-  if (!confirm(`Stop worker ${wi + 1} task ${tid}?`)) return;
+async function loadDrawerLogs() {
+  if (!state.drawerTaskId) return;
   try {
-    await api(`/api/workers/${wi}/task/${tid}/stop`, 'POST');
-    toast('Worker task stopped.', 'success');
-    await refreshDrawer();
-    loadConstellationStatus(true);
+    const data = await api(`/api/tasks/${state.drawerTaskId}/logs`);
+    const logEl = document.getElementById('drawer-log');
+    if (data.logs !== undefined) {
+      logEl.innerHTML = `<pre class="log-content">${escHtml(data.logs)}</pre>`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  } catch {
+    // ignore
+  }
+}
+
+async function stopWorkerTask() {
+  if (!state.drawerTaskId) return;
+  try {
+    await api(`/api/tasks/${state.drawerTaskId}/stop`, 'POST');
+    toast('Task stopped', 'success');
+    loadDrawerLogs();
   } catch (e) {
     toast(e.message, 'error');
   }
 }
 
-// ── Worker availability banner (for create modal) ────
+// ── Projects ────────────────────────────────────────────
 
-async function updateWorkerAvailBanner() {
-  const banner = document.getElementById('worker-avail-banner');
-  if (!banner) return;
+// In-memory project storage (until backend persistence)
+function getProjects() {
+  const stored = localStorage.getItem('rover_projects');
+  return stored ? JSON.parse(stored) : [];
+}
 
+function saveProjects(projects) {
+  localStorage.setItem('rover_projects', JSON.stringify(projects));
+  state.projects = projects;
+}
+
+function addProject(project) {
+  const projects = getProjects();
+  project.id = `proj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  project.createdAt = new Date().toISOString();
+  project.status = 'loading';
+  project.directorTaskId = null;
+  project.tasks = [];
+  project.repos = [project.baseRepo, ...(project.additionalRepos || [])].filter(Boolean);
+  projects.push(project);
+  saveProjects(projects);
+  return project;
+}
+
+function updateProject(id, updates) {
+  const projects = getProjects();
+  const idx = projects.findIndex(p => p.id === id);
+  if (idx >= 0) {
+    projects[idx] = { ...projects[idx], ...updates };
+    saveProjects(projects);
+    return projects[idx];
+  }
+  return null;
+}
+
+async function loadProjects(silent = false) {
+  const projects = getProjects();
+  state.projects = projects;
+
+  if (!silent) {
+    document.getElementById('projects-grid').innerHTML =
+      projects.length === 0
+        ? `<div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+            <div class="empty-state-title">No projects loaded</div>
+            <div class="empty-state-desc">Load a project to start Director orchestration.</div>
+            <button class="btn btn-primary btn-sm" onclick="openLoadProjectModal()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Load Project
+            </button>
+          </div>`
+        : renderProjectsGrid(projects);
+  } else {
+    const grid = document.getElementById('projects-grid');
+    if (grid && projects.length > 0) {
+      grid.innerHTML = renderProjectsGrid(projects);
+    }
+  }
+
+  document.getElementById('badge-projects').textContent = projects.length;
+  document.getElementById('badge-projects').style.display = projects.length > 0 ? '' : 'none';
+
+  setLastRefresh();
+}
+
+function renderProjectsGrid(projects) {
+  return `<div class="projects-grid">${projects.map(p => `
+    <div class="project-card" onclick="openProject('${p.id}')">
+      <div class="project-card-header">
+        <div class="project-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <polyline points="9 22 9 12 15 12 15 22"/>
+          </svg>
+        </div>
+        <div class="project-card-status status-${p.status || 'loading'}">${p.status || 'loading'}</div>
+      </div>
+      <div class="project-card-title">${escHtml(p.name)}</div>
+      <div class="project-card-repo">${escHtml(p.baseRepo?.replace('https://github.com/', '') || '—')}</div>
+      <div class="project-card-meta">
+        <span>${p.repos?.length || 1} repo${(p.repos?.length || 1) !== 1 ? 's' : ''}</span>
+        <span>·</span>
+        <span>${p.tasks?.length || 0} tasks</span>
+      </div>
+    </div>
+  `).join('')}</div>`;
+}
+
+async function openProject(id) {
+  state.currentProjectId = id;
+  showPage('project-detail');
+  await loadProjectDetail(id);
+}
+
+async function loadProjectDetail(id, silent = false) {
+  const project = getProjects().find(p => p.id === id);
+  if (!project) {
+    toast('Project not found', 'error');
+    showPage('projects');
+    return;
+  }
+
+  document.getElementById('project-detail-breadcrumb').textContent = project.name;
+  document.getElementById('project-detail-title').textContent = project.name;
+  document.getElementById('project-detail-subtitle').textContent = project.baseRepo;
+
+  document.getElementById('project-detail-meta').innerHTML = `
+    ${metaItem('Status', statusBadge(project.status))}
+    ${metaItem('Base Repo', project.baseRepo, true)}
+    ${metaItem('Source Branch', project.sourceBranch || 'main')}
+    ${metaItem('Director Model', project.model || 'claude-sonnet-4-20250514')}
+    ${metaItem('Created', fmt(project.createdAt))}
+    ${metaItem('Director Task', project.directorTaskId ? `<code>${project.directorTaskId}</code>` : 'Not dispatched', true)}
+  `;
+
+  document.getElementById('project-director-info').innerHTML = project.directorTaskId
+    ? `<div style="font-size:0.85rem">
+        <div style="margin-bottom:8px"><strong>Director Task:</strong></div>
+        <code style="font-size:0.75rem">${project.directorTaskId}</code>
+        <div style="margin-top:12px">
+          <button class="btn btn-ghost btn-sm" onclick="viewDirectorTask('${project.directorTaskId}')">
+            View Director Task
+          </button>
+        </div>
+       </div>`
+    : `<div class="text-dim" style="font-size:0.85rem">Director not yet dispatched.</div>`;
+
+  // Load project tasks
+  await loadProjectTasks(project);
+
+  // Render repos
+  document.getElementById('project-repos-list').innerHTML = `
+    <div class="repo-list">
+      ${project.repos?.map((repo, i) => `
+        <div class="repo-item">
+          <div class="repo-item-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>
+            </svg>
+          </div>
+          <div class="repo-item-info">
+            <div class="repo-item-name">${escHtml(repo.replace('https://github.com/', ''))}</div>
+            <div class="repo-item-url">${escHtml(repo)}</div>
+          </div>
+          <div class="repo-item-type">${i === 0 ? '<span class="badge">Base</span>' : ''}</div>
+        </div>
+      `).join('') || '<div class="text-dim">No repositories</div>'}
+    </div>
+  `;
+
+  setLastRefresh();
+}
+
+async function loadProjectTasks(project) {
+  // Filter tasks that belong to this project's repos
+  const allTasks = await api('/api/tasks').catch(() => []);
+  const projectTasks = allTasks.filter(t =>
+    project.repos?.some(r => t.repo === r || t.repo?.includes(r.replace('https://github.com/', '')))
+  );
+
+  project.tasks = projectTasks;
+  updateProject(project.id, { tasks: projectTasks });
+
+  const container = document.getElementById('project-tasks-list');
+  if (projectTasks.length === 0) {
+    container.innerHTML = `<div class="empty-state">
+      <div class="empty-state-title">No tasks yet</div>
+      <div class="empty-state-desc">Create a task to start work on this project.</div>
+      <button class="btn btn-primary btn-sm" onclick="openCreateTaskModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        New Task
+      </button>
+    </div>`;
+  } else {
+    container.innerHTML = renderTaskTable(projectTasks);
+  }
+
+  // Update worker assignments
+  const assignments = state.workers
+    .filter(w => w.state === 'busy' && projectTasks.some(t => t.id === w.taskId))
+    .map(w => {
+      const task = projectTasks.find(t => t.id === w.taskId);
+      return { worker: w, task };
+    });
+
+  document.getElementById('project-worker-assignments').innerHTML = assignments.length > 0
+    ? `<div class="worker-assignments">
+        ${assignments.map(a => `
+          <div class="worker-assignment">
+            <div class="worker-assignment-worker">W${a.worker.index + 1}</div>
+            <div class="worker-assignment-task">${escHtml(a.task?.description?.slice(0, 40) || '—')}…</div>
+            <div class="worker-assignment-repo">${escHtml(a.task?.repo?.replace('https://github.com/', '') || '—')}</div>
+          </div>
+        `).join('')}
+       </div>`
+    : `<div class="text-dim" style="font-size:0.8rem">No workers currently assigned to this project.</div>`;
+}
+
+function switchProjectTab(tab) {
+  state.currentProjectTab = tab;
+
+  document.querySelectorAll('[id^="tab-project-"]').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  document.getElementById(`tab-project-${tab}`)?.classList.add('active');
+
+  document.querySelectorAll('[id^="tab-panel-project-"]').forEach(panel => {
+    panel.classList.add('hidden');
+  });
+  document.getElementById(`tab-panel-project-${tab}`)?.classList.remove('hidden');
+}
+
+function viewDirectorTask(taskId) {
+  openTask(taskId);
+}
+
+// ── Load Project Modal ─────────────────────────────────
+
+function openLoadProjectModal() {
+  document.getElementById('load-project-modal').classList.add('open');
+  updateWorkerAvailBanner();
+}
+
+function closeLoadProjectModal() {
+  document.getElementById('load-project-modal').classList.remove('open');
+}
+
+async function loadProject() {
+  const name = document.getElementById('project-name').value.trim();
+  const baseRepo = document.getElementById('project-base-repo').value.trim();
+  const additionalRepos = document.getElementById('project-additional-repos').value
+    .split('\n')
+    .map(r => r.trim())
+    .filter(Boolean);
+  const sourceBranch = document.getElementById('project-source-branch').value.trim() || 'main';
+  const model = document.getElementById('project-model').value;
+  const directorPrompt = document.getElementById('project-director-prompt').value.trim();
+
+  if (!name) {
+    toast('Project name is required', 'error');
+    return;
+  }
+  if (!baseRepo) {
+    toast('Base repository is required', 'error');
+    return;
+  }
+
+  const project = addProject({
+    name,
+    baseRepo,
+    additionalRepos,
+    sourceBranch,
+    model,
+    directorPrompt,
+  });
+
+  closeLoadProjectModal();
+  toast(`Project "${name}" created. Dispatching Director…`, 'success');
+
+  // Dispatch Director task
   try {
-    const data = await api('/api/constellation/status');
-    if (!data || !data.total) {
-      banner.style.display = 'flex';
-      banner.className = 'worker-avail-banner avail-none';
-      banner.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12" y2="16"/></svg>No worker pool configured — task will run via local CLI.`;
-      return;
+    const reposList = [baseRepo, ...additionalRepos].join(', ');
+    const result = await api('/api/tasks', 'POST', {
+      description: `**DIRECTOR ORCHESTRATION TASK** for project "${name}"
+
+You are the Director for this multi-repository project. Your mission:
+
+1. **Initial Scan**: Clone and analyze all repositories:
+   ${reposList}
+
+2. **Discovery**: Find and document:
+   - Existing tasks, issues, or TODOs in the codebase
+   - Documentation (README, ROADMAP, PLAN, ADR files)
+   - Current implementation status
+   - Technical architecture and patterns
+
+3. **Analysis**: Create a comprehensive project audit including:
+   - Repository structure for each repo
+   - Key components and their relationships
+   - Work items identified (features, bugs, tech debt)
+   - Cross-repository dependencies
+   - Recommended task priorities
+
+4. **Coordination Plan**: Document how workers should be assigned:
+   - Which repositories need attention
+   - Suggested worker-agent assignments
+   - Priority order for tasks
+
+5. **Deliverable**: Create ROVER_PROJECT_AUDIT.md in the base repository with all findings.
+
+Project-specific instructions: ${directorPrompt || 'None provided'}
+
+This audit will guide the worker pool dispatch plan.`,
+      repo: baseRepo,
+      agent: 'claude',
+      model: model,
+      sourceBranch: sourceBranch,
+    });
+
+    if (result.accepted) {
+      updateProject(project.id, {
+        status: 'audit-running',
+        directorTaskId: result.taskId,
+      });
+      toast(`Director dispatched (Task: ${result.taskId})`, 'success');
+      loadProjects();
     }
-    if (data.idle > 0) {
-      banner.style.display = 'flex';
-      banner.className = 'worker-avail-banner avail-ok';
-      banner.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>${data.idle} worker${data.idle !== 1 ? 's' : ''} idle and ready.`;
-    } else {
-      banner.style.display = 'flex';
-      banner.className = 'worker-avail-banner avail-busy';
-      banner.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12" y2="16"/></svg>All ${data.total} workers busy — task will queue or may fail.`;
-    }
-  } catch {
-    banner.style.display = 'none';
+  } catch (e) {
+    toast(`Failed to dispatch Director: ${e.message}`, 'error');
+    updateProject(project.id, { status: 'error' });
   }
 }
 
-// ── Tasks Page ────────────────────────────────────────────
+// ── Create Task Modal ──────────────────────────────────
+
+function openCreateTaskModal() {
+  const project = getProjects().find(p => p.id === state.currentProjectId);
+  if (!project) {
+    toast('No project selected', 'error');
+    return;
+  }
+
+  document.getElementById('task-project-id').value = state.currentProjectId;
+
+  // Populate repo dropdown
+  const repoSelect = document.getElementById('task-repo');
+  repoSelect.innerHTML = '<option value="">Select repository…</option>' +
+    project.repos?.map(r => `<option value="${escHtml(r)}">${escHtml(r.replace('https://github.com/', ''))}</option>`).join('');
+
+  document.getElementById('create-task-modal').classList.add('open');
+}
+
+function closeCreateTaskModal() {
+  document.getElementById('create-task-modal').classList.remove('open');
+}
+
+async function createTask() {
+  const projectId = document.getElementById('task-project-id').value;
+  const description = document.getElementById('task-description').value.trim();
+  const repo = document.getElementById('task-repo').value;
+  const agent = document.getElementById('task-agent').value;
+  const model = document.getElementById('task-model').value.trim();
+  const priority = document.getElementById('task-priority').value;
+
+  if (!description) {
+    toast('Task description is required', 'error');
+    return;
+  }
+  if (!repo) {
+    toast('Target repository is required', 'error');
+    return;
+  }
+
+  try {
+    const result = await api('/api/tasks', 'POST', {
+      description,
+      repo,
+      agent: agent || undefined,
+      model: model || undefined,
+      priority,
+    });
+
+    if (result.accepted) {
+      toast(`Task created and dispatched to ${result.dispatchedTo}`, 'success');
+      closeCreateTaskModal();
+      if (state.currentPage === 'project-detail') {
+        loadProjectDetail(projectId);
+      } else {
+        loadTasks();
+      }
+    }
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// ── Director Chat ───────────────────────────────────────
+
+async function loadDirectorPage() {
+  // Load active projects for sidebar
+  const projects = getProjects();
+  const activeProjects = projects.filter(p => p.status !== 'error');
+
+  document.getElementById('director-projects-list').innerHTML = activeProjects.length > 0
+    ? activeProjects.map(p => `
+        <div class="director-project-item" onclick="openProject('${p.id}')">
+          <div class="director-project-name">${escHtml(p.name)}</div>
+          <div class="director-project-status status-${p.status}">${p.status}</div>
+        </div>
+      `).join('')
+    : `<div class="text-dim" style="font-size:0.85rem;text-align:center;padding:var(--space-4)">
+        No active projects.
+       </div>`;
+
+  // Load worker status
+  const workerStatus = await loadConstellationStatus(true);
+  document.getElementById('director-worker-status').innerHTML = workerStatus
+    ? `<div class="worker-status-grid">
+        ${workerStatus.workers?.map(w => `
+          <div class="worker-status-item ${w.state}">
+            <div class="worker-status-id">W${w.index + 1}</div>
+            <div class="worker-status-state">${w.state}</div>
+            ${w.taskId ? `<div class="worker-status-task">${w.taskId.slice(0, 8)}…</div>` : ''}
+          </div>
+        `).join('') || '<div class="text-dim">No workers</div>'}
+       </div>`
+    : `<div class="text-dim">Worker status unavailable</div>`;
+}
+
+function sendDirectorMessage() {
+  const input = document.getElementById('director-input');
+  const message = input.value.trim();
+  if (!message) return;
+
+  // Add user message to chat
+  addChatMessage('director-chat-messages', 'user', message);
+  input.value = '';
+
+  // TODO: Send to backend for Director agent
+  // For now, simulate response
+  setTimeout(() => {
+    addChatMessage('director-chat-messages', 'director',
+      `I received your message: "${message}"\n\n` +
+      `I'm currently managing ${getProjects().length} project(s). ` +
+      `Would you like me to create a new task, check on existing work, or load another project?`
+    );
+  }, 500);
+}
+
+function sendProjectDirectorMessage() {
+  const input = document.getElementById('project-director-input');
+  const message = input.value.trim();
+  if (!message) return;
+
+  addChatMessage('project-director-chat', 'user', message);
+  input.value = '';
+
+  // TODO: Send to backend
+  setTimeout(() => {
+    addChatMessage('project-director-chat', 'director',
+      `Project Director: I received your message about this project.\n\n` +
+      `I can help coordinate work across the ${getProjects().find(p => p.id === state.currentProjectId)?.repos?.length || 1} repositories. ` +
+      `What would you like me to do?`
+    );
+  }, 500);
+}
+
+function addChatMessage(containerId, role, message) {
+  const container = document.getElementById(containerId);
+  const messageEl = document.createElement('div');
+  messageEl.className = `chat-message ${role}`;
+  messageEl.innerHTML = `
+    <div class="chat-avatar">${role === 'director' ? 'D' : 'U'}</div>
+    <div class="chat-content">
+      <div class="chat-header">${role === 'director' ? 'Director' : 'You'}</div>
+      <div class="chat-body">${escHtml(message).replace(/\n/g, '<br>')}</div>
+    </div>
+  `;
+  container.appendChild(messageEl);
+  container.scrollTop = container.scrollHeight;
+}
+
+// ── Workers Page ────────────────────────────────────────
+
+async function loadWorkersPage() {
+  const data = await loadConstellationStatus();
+
+  document.getElementById('workers-list').innerHTML = data && data.workers
+    ? `<div class="workers-table-wrap">
+        <table class="task-table">
+          <thead>
+            <tr>
+              <th>Worker</th>
+              <th>Status</th>
+              <th>Agent</th>
+              <th>Current Task</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.workers.map(w => `
+              <tr>
+                <td><strong>W${w.index + 1}</strong></td>
+                <td>${statusBadge(w.state.toUpperCase())}</td>
+                <td>${escHtml(w.agent || '—')}</td>
+                <td>${w.taskId ? `<code>${escHtml(w.taskId)}</code>` : '—'}</td>
+                <td>
+                  ${w.state === 'busy' && w.taskId
+                    ? `<button class="btn btn-ghost btn-sm" onclick="openWorkerDrawer(${w.index}, '${w.taskId}')">View Logs</button>`
+                    : '—'}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+       </div>`
+    : `<div class="empty-state">
+        <div class="empty-state-title">No workers configured</div>
+        <div class="empty-state-desc">Worker pool is not available.</div>
+       </div>`;
+
+  document.getElementById('badge-workers').textContent = data?.total || 0;
+}
+
+// ── Tasks Page ───────────────────────────────────────────
 
 async function loadTasks(silent = false) {
   if (!silent) {
@@ -439,9 +899,11 @@ async function loadTasks(silent = false) {
   }
   try {
     const tasks = await api('/api/tasks');
-    // Normalize all tasks for compatibility
     state.tasks = Array.isArray(tasks) ? tasks.map(normalizeTask) : [];
-    renderTasks(state.tasks);
+
+    const container = document.getElementById('task-list-body');
+    container.innerHTML = renderTaskTable(state.tasks);
+
     updateStats(state.tasks);
     setLastRefresh();
   } catch (e) {
@@ -455,6 +917,66 @@ async function loadTasks(silent = false) {
       toast(e.message, 'error');
     }
   }
+}
+
+function renderTaskTable(tasks) {
+  if (tasks.length === 0) {
+    return `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>
+      </svg>
+      <div class="empty-state-title">No tasks found</div>
+      <div class="empty-state-desc">Create a new task to get started.</div>
+      <button class="btn btn-primary btn-sm" onclick="openLoadProjectModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Load Project
+      </button>
+    </div>`;
+  }
+
+  const sorted = [...tasks].sort((a, b) => {
+    const running = s => (['IN_PROGRESS', 'ITERATING'].includes(s) ? 1 : 0);
+    if (running(b.status) !== running(a.status))
+      return running(b.status) - running(a.status);
+    return b.id - a.id;
+  });
+
+  return `<div class="task-table-wrap">
+    <table class="task-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Title</th><th>Repository</th><th>Agent</th><th>Status</th>
+          <th>Progress</th><th>Duration</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="task-tbody">
+        ${sorted.map(t => {
+          const iterData = t.iterationsData?.[t.iterationsData.length - 1];
+          const iterStatus = iterData?.status ? iterData.status() : null;
+          let pct = iterStatus?.progress ?? 0;
+          const endTime = t.completedAt || t.failedAt;
+          const duration = fmtDuration(t.startedAt, endTime);
+          let agentDisplay = t.agent || '—';
+          if (t.agent && t.model) agentDisplay = `${t.agent}:${t.model.slice(0, 10)}`;
+
+          return `<tr onclick="openTask('${t.id}')" title="Open task ${t.id}">
+            <td><span class="task-id">#${t.id.slice(0, 8)}</span></td>
+            <td><span class="task-title">${escHtml(t.title || t.description?.slice(0, 60) || 'Untitled')}</span></td>
+            <td><span class="task-repo" title="${escHtml(t.repo || '')}">${escHtml(t.repo?.replace('https://github.com/', '').slice(0, 30) || '—')}</span></td>
+            <td><span class="task-agent">${escHtml(agentDisplay)}</span></td>
+            <td>${statusBadge(t.status)}</td>
+            <td>${progressBar(pct, t.status)}</td>
+            <td style="font-size:0.78rem;color:var(--text-3);white-space:nowrap">${duration}</td>
+            <td>
+              <div style="display:flex;gap:4px;opacity:0;transition:opacity 0.15s" class="row-actions">
+                ${actionButtons(t)}
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>`;
 }
 
 function updateStats(tasks) {
@@ -475,86 +997,6 @@ function updateStats(tasks) {
   const badge = document.getElementById('badge-tasks');
   badge.textContent = total;
   badge.style.display = total > 0 ? '' : 'none';
-}
-
-function renderTasks(tasks) {
-  const container = document.getElementById('task-list-body');
-
-  if (tasks.length === 0) {
-    container.innerHTML = `<div class="empty-state">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>
-      </svg>
-      <div class="empty-state-title">No tasks found</div>
-      <div class="empty-state-desc">Create a new task to get started.</div>
-      <button class="btn btn-primary btn-sm" onclick="openCreateModal()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        New Task
-      </button>
-    </div>`;
-    return;
-  }
-
-  // Sort: running first, then by id desc
-  const sorted = [...tasks].sort((a, b) => {
-    const running = s => (['IN_PROGRESS', 'ITERATING'].includes(s) ? 1 : 0);
-    if (running(b.status) !== running(a.status))
-      return running(b.status) - running(a.status);
-    return b.id - a.id;
-  });
-
-  let rows = sorted
-    .map(t => {
-      const iterData = t.iterationsData?.[t.iterationsData.length - 1];
-      const iterStatus = iterData?.status ? iterData.status() : null;
-      let pct = iterStatus?.progress ?? 0;
-      let step = iterStatus?.currentStep ?? '—';
-      let endTime = t.completedAt || t.failedAt;
-      const duration = fmtDuration(t.startedAt, endTime);
-      let agentDisplay = t.agent || '—';
-      if (t.agent && t.agentModel) agentDisplay = `${t.agent}:${t.agentModel}`;
-      else if (t.agent) agentDisplay = t.agent;
-
-      return `<tr onclick="openTask('${t.id}')" title="Open task ${t.id}">
-      <td><span class="task-id">#${t.id}</span></td>
-      <td><span class="task-title">${escHtml(t.title || t.description?.slice(0, 60) || 'Untitled')}</span></td>
-      <td><span class="task-agent">${escHtml(agentDisplay)}</span></td>
-      <td>${statusBadge(t.status)}</td>
-      <td>${progressBar(pct, t.status)}</td>
-      <td style="font-size:0.78rem;color:var(--text-3);max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(step)}</td>
-      <td style="font-size:0.78rem;color:var(--text-3);white-space:nowrap">${duration}</td>
-      <td>
-        <div style="display:flex;gap:4px;opacity:0;transition:opacity 0.15s" class="row-actions">
-          ${actionButtons(t)}
-        </div>
-      </td>
-    </tr>`;
-    })
-    .join('');
-
-  container.innerHTML = `<div class="task-table-wrap">
-    <table class="task-table">
-      <thead>
-        <tr>
-          <th>ID</th><th>Title</th><th>Agent</th><th>Status</th>
-          <th>Progress</th><th>Current Step</th><th>Duration</th><th></th>
-        </tr>
-      </thead>
-      <tbody id="task-tbody">${rows}</tbody>
-    </table>
-  </div>`;
-
-  // Show row actions on hover
-  container.querySelectorAll('tbody tr').forEach(tr => {
-    tr.addEventListener(
-      'mouseenter',
-      () => (tr.querySelector('.row-actions').style.opacity = '1')
-    );
-    tr.addEventListener(
-      'mouseleave',
-      () => (tr.querySelector('.row-actions').style.opacity = '0')
-    );
-  });
 }
 
 function actionButtons(t) {
@@ -582,13 +1024,13 @@ function actionButtons(t) {
   return btns;
 }
 
-// ── Task Detail Page ──────────────────────────────────────
+// ── Task Detail Page ────────────────────────────────────
 
 async function openTask(id) {
   state.currentTaskId = id;
   showPage('detail');
   switchTab('overview');
-  document.getElementById('detail-breadcrumb').textContent = `Task #${id}`;
+  document.getElementById('detail-breadcrumb').textContent = `Task #${id.slice(0, 8)}`;
   document.getElementById('detail-title').textContent = `Loading…`;
   document.getElementById('detail-subtitle').textContent = '';
   document.getElementById('detail-actions').innerHTML = '';
@@ -602,449 +1044,360 @@ async function openTask(id) {
 
 async function loadTaskDetail(id, silent = false) {
   try {
-    const task = await api(`/api/tasks/${id}`);
-    // Normalize task object for compatibility between CLI and worker formats
-    const normalized = normalizeTask(task);
-    state.currentTask = normalized;
-    renderTaskDetail(normalized);
+    const t = await api(`/api/tasks/${id}`);
+    state.currentTask = normalizeTask(t);
+
+    document.getElementById('detail-breadcrumb').textContent = `Task #${id.slice(0, 8)}`;
+    document.getElementById('detail-title').textContent =
+      t.title || t.description?.slice(0, 60) || 'Untitled Task';
+    document.getElementById('detail-subtitle').textContent =
+      `Created ${fmt(t.createdAt)} · ${t.repo || '—'}`;
+
+    const isRunning = ['IN_PROGRESS', 'ITERATING'].includes(t.status);
+    const isDone = ['COMPLETED', 'MERGED', 'PUSHED', 'FAILED'].includes(t.status);
+
+    document.getElementById('detail-actions').innerHTML = `
+      ${isRunning
+        ? `<button class="btn btn-danger" onclick="stopTask('${id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="6" y="6" width="12" height="12"/></svg> Stop</button>`
+        : ''}
+      ${isDone && t.status !== 'MERGED'
+        ? `<button class="btn btn-primary" onclick="mergeTask('${id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg> Merge</button>`
+        : ''}
+      ${t.status === 'FAILED' || t.status === 'NEW'
+        ? `<button class="btn btn-ghost" onclick="restartTask('${id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-5.26"/></svg> Restart</button>`
+        : ''}
+      <button class="btn btn-ghost" onclick="deleteTask('${id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg> Delete</button>
+    `;
+
+    document.getElementById('detail-meta').innerHTML = `
+      ${metaItem('ID', `<code>${t.id}</code>`, true)}
+      ${metaItem('Status', statusBadge(t.status))}
+      ${metaItem('Agent', t.agent || '—')}
+      ${metaItem('Model', t.model || '—')}
+      ${metaItem('Repository', t.repo || '—', true)}
+      ${metaItem('Branch', t.branch || '—')}
+      ${metaItem('Worktree', t.worktreeBranch || '—', true)}
+      ${metaItem('Started', fmt(t.startedAt))}
+      ${metaItem('Completed', fmt(t.completedAt))}
+    `;
+
+    document.getElementById('detail-description').textContent = t.description || '—';
+
     setLastRefresh();
   } catch (e) {
     if (!silent) toast(e.message, 'error');
   }
 }
 
-// Normalize task object to handle both CLI and worker API formats
-function normalizeTask(task) {
-  return {
-    ...task,
-    // Use description as title if title is missing
-    title: task.title || task.description || task.prompt,
-    // Use description or prompt
-    description: task.description || task.prompt,
-    // Default iterations to 1 if missing
-    iterations: task.iterations || 1,
-    // Use worktreeBranch as branchName if missing
-    branchName: task.branchName || task.worktreeBranch || task.branch,
-    // Use sourceBranch or branch
-    sourceBranch: task.sourceBranch || task.branch,
-    // Use startedAt as createdAt if missing
-    createdAt: task.createdAt || task.startedAt,
-    // Ensure status is uppercase
-    status: task.status ? task.status.toUpperCase() : 'NEW',
-    // Default workflow name
-    workflowName: task.workflowName || task.workflow || '—',
-  };
-}
+function switchTab(tab) {
+  state.currentTab = tab;
 
-function renderTaskDetail(task) {
-  if (!task) return;
-
-  document.getElementById('detail-breadcrumb').textContent = `Task #${task.id}`;
-  document.getElementById('detail-title').textContent =
-    task.title || `Task #${task.id}`;
-  document.getElementById('detail-subtitle').innerHTML = statusBadge(
-    task.status
-  );
-  document.getElementById('detail-description').textContent =
-    task.description || 'No description.';
-
-  // Meta
-  const agent =
-    task.agentDisplay ||
-    (task.agent && task.agentModel
-      ? `${task.agent}:${task.agentModel}`
-      : task.agent || '—');
-  document.getElementById('detail-meta').innerHTML = [
-    metaItem('Status', statusBadge(task.status)),
-    metaItem('Agent', escHtml(agent)),
-    metaItem('Workflow', escHtml(task.workflowName)),
-    metaItem('Iterations', task.iterations),
-    metaItem('Branch', `<span class="mono">${escHtml(task.branchName)}</span>`),
-    metaItem(
-      'Source Branch',
-      `<span class="mono">${escHtml(task.sourceBranch || '—')}</span>`
-    ),
-    metaItem('Created', fmt(task.createdAt)),
-    metaItem('Started', fmt(task.startedAt)),
-    task.completedAt ? metaItem('Completed', fmt(task.completedAt)) : '',
-    task.failedAt ? metaItem('Failed', fmt(task.failedAt)) : '',
-    metaItem(
-      'Duration',
-      fmtDuration(task.startedAt, task.completedAt || task.failedAt)
-    ),
-  ].join('');
-
-  // Action buttons
-  const status = task.status;
-  const isRunning = ['IN_PROGRESS', 'ITERATING'].includes(status);
-  const isDone = ['COMPLETED', 'FAILED', 'MERGED', 'PUSHED'].includes(status);
-  let actions = '';
-
-  actions += `<button class="btn btn-ghost btn-sm" onclick="switchTab('logs')">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/></svg>
-    Logs
-  </button>`;
-
-  actions += `<button class="btn btn-ghost btn-sm" onclick="switchTab('diff')">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/></svg>
-    Diff
-  </button>`;
-
-  if (isRunning) {
-    actions += `<button class="btn btn-ghost btn-sm" onclick="stopTask('${task.id}')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12"/></svg>
-      Stop
-    </button>`;
-  }
-
-  if (isDone && status !== 'MERGED') {
-    actions += `<button class="btn btn-ghost btn-sm" onclick="mergeTask('${task.id}')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
-      Merge
-    </button>`;
-    if (status !== 'PUSHED') {
-      actions += `<button class="btn btn-ghost btn-sm" onclick="pushTask('${task.id}')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        Push
-      </button>`;
-    }
-  }
-
-  if (['FAILED', 'NEW'].includes(status)) {
-    actions += `<button class="btn btn-ghost btn-sm" onclick="restartTask('${task.id}')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-5.26"/></svg>
-      Restart
-    </button>`;
-  }
-
-  actions += `<button class="btn btn-danger btn-sm" onclick="deleteTask('${task.id}')">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
-    Delete
-  </button>`;
-
-  document.getElementById('detail-actions').innerHTML = actions;
-
-  // File changes
-  const files = task.fileChanges || [];
-  if (files.length > 0) {
-    document.getElementById('detail-files').innerHTML = files
-      .map(
-        f => `
-      <div class="file-item">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        <span class="truncate">${escHtml(f.path)}</span>
-        <div class="file-stat">
-          <span class="file-add">+${f.insertions}</span>
-          <span class="file-del">-${f.deletions}</span>
-        </div>
-      </div>`
-      )
-      .join('');
-  } else {
-    document.getElementById('detail-files').innerHTML =
-      `<div class="text-dim" style="font-size:0.8rem">No file changes recorded yet.</div>`;
-  }
-
-  // Iteration timeline
-  renderIterations(task);
-}
-
-function renderIterations(task) {
-  const container = document.getElementById('detail-iterations');
-  const count = task.iterations || 1;
-  let html = '<div class="timeline">';
-  for (let i = 1; i <= count; i++) {
-    const isLast = i === count;
-    const dotClass = isLast
-      ? task.status === 'FAILED'
-        ? 'failed'
-        : ['COMPLETED', 'MERGED', 'PUSHED'].includes(task.status)
-          ? 'completed'
-          : 'running'
-      : 'completed';
-    html += `<div class="timeline-item">
-      <div class="timeline-dot ${dotClass}"></div>
-      <div class="timeline-line"></div>
-      <div class="timeline-content">
-        <div class="timeline-title">Iteration ${i}</div>
-        <div class="timeline-time">${isLast ? statusLabel(task.status) : 'Completed'}</div>
-      </div>
-    </div>`;
-  }
-  html += '</div>';
-  container.innerHTML = html;
-}
-
-// ── Tabs ──────────────────────────────────────────────────
-
-function switchTab(name) {
-  state.currentTab = name;
-  document
-    .querySelectorAll('.tab-btn')
-    .forEach(b => b.classList.remove('active'));
-  document.getElementById(`tab-${name}`)?.classList.add('active');
-
-  ['overview', 'logs', 'diff'].forEach(t => {
-    document
-      .getElementById(`tab-panel-${t}`)
-      ?.classList.toggle('hidden', t !== name);
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.remove('active');
   });
+  document.getElementById(`tab-${tab}`)?.classList.add('active');
 
-  if (name === 'logs' && state.currentTaskId) loadLogs();
-  if (name === 'diff' && state.currentTaskId) loadDiff();
+  document.querySelectorAll('[id^="tab-panel-"]').forEach(panel => {
+    panel.classList.add('hidden');
+  });
+  document.getElementById(`tab-panel-${tab}`)?.classList.remove('hidden');
+
+  if (tab === 'logs') loadLogs();
+  if (tab === 'diff') loadDiff();
+  if (tab === 'conversation') loadTaskConversation();
 }
 
 async function loadLogs() {
+  if (!state.currentTaskId) return;
   const viewer = document.getElementById('log-viewer');
   viewer.innerHTML = `<div class="loading-state"><div class="spinner"></div></div>`;
   try {
     const data = await api(`/api/tasks/${state.currentTaskId}/logs`);
-    const raw = data.logs || data.raw || JSON.stringify(data, null, 2);
-    renderLogs(viewer, raw);
+    viewer.innerHTML = `<pre class="log-content">${escHtml(data.logs || 'No logs yet.')}</pre>`;
   } catch (e) {
-    viewer.innerHTML = `<div class="log-line error">Error: ${escHtml(e.message)}</div>`;
+    viewer.innerHTML = `<div class="empty-state" style="padding:var(--space-6)">${escHtml(e.message)}</div>`;
   }
-}
-
-function renderLogs(viewer, raw) {
-  const lines = raw.split('\n');
-  viewer.innerHTML = lines
-    .map(line => {
-      let cls = 'log-line';
-      const lo = line.toLowerCase();
-      if (lo.includes('error') || lo.includes('fail')) cls += ' error';
-      else if (
-        lo.includes('success') ||
-        lo.includes('complete') ||
-        lo.includes('done')
-      )
-        cls += ' success';
-      else if (lo.startsWith('[') || lo.includes(' info ')) cls += ' info';
-      else if (lo.includes('warn')) cls += ' warn';
-      return `<div class="${cls}">${escHtml(line)}</div>`;
-    })
-    .join('');
-  viewer.scrollTop = viewer.scrollHeight;
 }
 
 async function loadDiff() {
+  if (!state.currentTaskId) return;
   const viewer = document.getElementById('diff-viewer');
   viewer.innerHTML = `<div class="loading-state"><div class="spinner"></div></div>`;
-  document.getElementById('diff-stats').textContent = '';
   try {
     const data = await api(`/api/tasks/${state.currentTaskId}/diff`);
-    renderDiff(viewer, data);
+    const diffText = data.diff || '';
+    const files = data.files || [];
+
+    document.getElementById('diff-stats').textContent =
+      files.length > 0 ? `${files.length} file${files.length !== 1 ? 's' : ''} changed` : '';
+
+    if (!diffText) {
+      viewer.innerHTML = `<div class="empty-state" style="padding:var(--space-6)">No changes yet.</div>`;
+      return;
+    }
+
+    const html = diffText.split('\n').map(line => {
+      const cls = line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : line.startsWith('@@') ? 'meta' : '';
+      return `<div class="diff-line ${cls}">${escHtml(line)}</div>`;
+    }).join('');
+
+    viewer.innerHTML = html;
   } catch (e) {
-    viewer.innerHTML = `<div class="log-line error" style="padding:16px">Error: ${escHtml(e.message)}</div>`;
+    viewer.innerHTML = `<div class="empty-state" style="padding:var(--space-6)">${escHtml(e.message)}</div>`;
   }
 }
 
-function renderDiff(viewer, data) {
-  const raw = data.diff || '';
+// ── Conversation Continuation ───────────────────────────
 
-  if (!raw.trim()) {
-    viewer.innerHTML = `<div class="empty-state" style="padding:40px">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
-      <div class="empty-state-title">No diff available</div>
-    </div>`;
+function continueTaskConversation() {
+  document.getElementById('conversation-modal').classList.add('open');
+  loadTaskConversation();
+}
+
+function closeConversationModal() {
+  document.getElementById('conversation-modal').classList.remove('open');
+}
+
+async function loadTaskConversation() {
+  const container = document.getElementById('conversation-messages');
+  const task = state.currentTask;
+
+  if (!task) {
+    container.innerHTML = `<div class="text-dim" style="text-align:center;padding:var(--space-8)">No task selected</div>`;
     return;
   }
 
-  // Compute stats
-  if (data.files) {
-    const adds = data.files.reduce((s, f) => s + (f.insertions || 0), 0);
-    const dels = data.files.reduce((s, f) => s + (f.deletions || 0), 0);
-    document.getElementById('diff-stats').innerHTML =
-      `<span style="color:var(--status-completed)">+${adds}</span> &nbsp;<span style="color:var(--status-failed)">−${dels}</span>`;
-  }
-
-  const lines = raw.split('\n');
-  let html = '';
-  let lineNum = 0;
-
-  lines.forEach(line => {
-    let cls = 'diff-line';
-    let prefix = ' ';
-    if (line.startsWith('+++') || line.startsWith('---')) {
-      cls += ' header';
-      prefix = '';
-    } else if (line.startsWith('@@')) {
-      cls += ' hunk';
-      prefix = '';
-      lineNum = 0;
-    } else if (line.startsWith('+')) {
-      cls += ' added';
-      lineNum++;
-      prefix = '+';
-    } else if (line.startsWith('-')) {
-      cls += ' removed';
-      prefix = '−';
-    } else {
-      lineNum++;
-    }
-    const gutter =
-      lineNum > 0 && !cls.includes('header') && !cls.includes('hunk')
-        ? `<span class="diff-gutter">${lineNum}</span>`
-        : `<span class="diff-gutter"></span>`;
-
-    html += `<div class="${cls}">${gutter}<span class="diff-content">${escHtml(line)}</span></div>`;
-  });
-
-  viewer.innerHTML = html;
-}
-
-// ── Info Page ─────────────────────────────────────────────
-
-async function loadInfo() {
-  document.getElementById('info-body').innerHTML =
-    `<div class="loading-state"><div class="spinner"></div> Loading…</div>`;
+  // Load conversation history from task logs
   try {
-    const data = await api('/api/info');
-    renderInfo(data);
-    setLastRefresh();
-  } catch (e) {
-    document.getElementById('info-body').innerHTML = `<div class="empty-state">
-        <div class="empty-state-title">Could not load info</div>
-        <div class="empty-state-desc">${escHtml(e.message)}</div>
-      </div>`;
-    toast(e.message, 'error');
-  }
-}
-
-function renderInfo(data) {
-  const projects = data.projects || [];
-  let html = `<div class="stats-grid mb-5">
-    <div class="stat-card">
-      <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
-      <div class="stat-value">${data.projectCount ?? projects.length}</div>
-      <div class="stat-label">Projects</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg></div>
-      <div class="stat-value">${projects.reduce((s, p) => s + (p.taskCount || 0), 0)}</div>
-      <div class="stat-label">Total Tasks</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21l18-9L3 3v7l13 2-13 2z"/></svg></div>
-      <div class="stat-value mono" style="font-size:0.8rem;word-break:break-all">${escHtml((data.storePath || '—').split(/[\/\\]/).pop() || '—')}</div>
-      <div class="stat-label">Store</div>
-    </div>
-  </div>`;
-
-  if (projects.length === 0) {
-    html += `<div class="empty-state" style="padding:var(--space-10)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-      <div class="empty-state-title">No projects registered</div>
-      <div class="empty-state-desc">Run <code>rover task</code> in a project directory to register it.</div>
-    </div>`;
-  } else {
-    html += `<div class="card"><div class="card-header"><div class="card-title">Registered Projects</div></div>
-      <div class="card-body"><div class="project-list">`;
-    html += projects
-      .map(
-        p => `
-      <div class="project-card">
-        <div class="project-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
-        <div style="min-width:0;flex:1">
-          <div class="project-name">${escHtml(p.name)}</div>
-          <div class="project-path" title="${escHtml(p.path)}">${escHtml(p.path)}</div>
+    const logs = await api(`/api/tasks/${task.id}/logs`);
+    container.innerHTML = `
+      <div class="chat-message system">
+        <div class="chat-avatar">S</div>
+        <div class="chat-content">
+          <div class="chat-header">System</div>
+          <div class="chat-body">
+            Continuing conversation for task <code>${task.id.slice(0, 8)}</code>.<br>
+            Agent: ${task.agent || '—'}<br>
+            Repository: ${task.repo?.replace('https://github.com/', '') || '—'}
+          </div>
         </div>
-        <span class="project-tasks-count">${p.taskCount} task${p.taskCount !== 1 ? 's' : ''}</span>
-      </div>`
-      )
-      .join('');
-    html += `</div></div></div>`;
+      </div>
+      <div class="chat-message director">
+        <div class="chat-avatar">D</div>
+        <div class="chat-content">
+          <div class="chat-header">Task Context</div>
+          <div class="chat-body">
+            Original task: ${task.description?.slice(0, 200) || '—'}…
+          </div>
+        </div>
+      </div>
+      <div class="chat-message system">
+        <div class="chat-avatar">📋</div>
+        <div class="chat-content">
+          <div class="chat-header">Execution Logs</div>
+          <div class="chat-body" style="font-family:monospace;font-size:0.8rem;white-space:pre-wrap;background:rgba(0,0,0,0.2);padding:12px;border-radius:6px;max-height:200px;overflow-y:auto">
+            ${escHtml(logs.logs?.slice(-2000) || 'No logs available')}
+          </div>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    container.innerHTML = `<div class="text-dim" style="text-align:center;padding:var(--space-8)">Error loading conversation: ${e.message}</div>`;
   }
-
-  document.getElementById('info-body').innerHTML = html;
 }
 
-// ── Task Actions ──────────────────────────────────────────
+function sendConversationMessage() {
+  const input = document.getElementById('conversation-input');
+  const message = input.value.trim();
+  if (!message) return;
+
+  const container = document.getElementById('conversation-messages');
+
+  // Add user message
+  const userMsg = document.createElement('div');
+  userMsg.className = 'chat-message user';
+  userMsg.innerHTML = `
+    <div class="chat-avatar">U</div>
+    <div class="chat-content">
+      <div class="chat-header">You</div>
+      <div class="chat-body">${escHtml(message)}</div>
+    </div>
+  `;
+  container.appendChild(userMsg);
+  input.value = '';
+  container.scrollTop = container.scrollHeight;
+
+  // TODO: Send to backend for agent continuation
+  setTimeout(() => {
+    const agentMsg = document.createElement('div');
+    agentMsg.className = 'chat-message agent';
+    agentMsg.innerHTML = `
+      <div class="chat-avatar">A</div>
+      <div class="chat-content">
+        <div class="chat-header">Agent (${state.currentTask?.agent || '—'})</div>
+        <div class="chat-body">
+          I received your follow-up message. To continue working on this task, I would need to be restarted with additional instructions. Please use the "Restart" button and include your new requirements in the task description.
+        </div>
+      </div>
+    `;
+    container.appendChild(agentMsg);
+    container.scrollTop = container.scrollHeight;
+  }, 500);
+}
+
+function sendTaskConversationMessage() {
+  const input = document.getElementById('task-conversation-input');
+  const message = input.value.trim();
+  if (!message) return;
+
+  addChatMessage('task-conversation-messages', 'user', message);
+  input.value = '';
+
+  setTimeout(() => {
+    addChatMessage('task-conversation-messages', 'agent',
+      `I'm the task agent. To implement your request: "${message.slice(0, 50)}...", ` +
+      `I would need to continue working on this task. Please restart the task with additional instructions.`
+    );
+  }, 500);
+}
+
+// ── Task Actions ────────────────────────────────────────
 
 async function stopTask(id) {
-  if (!confirm(`Stop task #${id}?`)) return;
   try {
     await api(`/api/tasks/${id}/stop`, 'POST');
-    toast(`Task #${id} stopped.`, 'success');
-    loadTasks(true);
-    if (state.currentPage === 'detail') loadTaskDetail(id, true);
-  } catch (e) {
-    toast(e.message, 'error');
-  }
-}
-
-async function deleteTask(id) {
-  if (!confirm(`Delete task #${id}? This cannot be undone.`)) return;
-  try {
-    await api(`/api/tasks/${id}/delete`, 'POST');
-    toast(`Task #${id} deleted.`, 'success');
-    if (state.currentPage === 'detail') showPage('tasks');
-    else loadTasks();
+    toast('Task stopped', 'success');
+    refreshCurrentPage();
   } catch (e) {
     toast(e.message, 'error');
   }
 }
 
 async function mergeTask(id) {
-  if (!confirm(`Merge task #${id} into current branch?`)) return;
   try {
     await api(`/api/tasks/${id}/merge`, 'POST');
-    toast(`Task #${id} merged!`, 'success');
-    loadTasks(true);
-    if (state.currentPage === 'detail') loadTaskDetail(id, true);
-  } catch (e) {
-    toast(e.message, 'error');
-  }
-}
-
-async function pushTask(id) {
-  if (!confirm(`Push task #${id} to remote?`)) return;
-  try {
-    await api(`/api/tasks/${id}/push`, 'POST');
-    toast(`Task #${id} pushed!`, 'success');
-    loadTasks(true);
-    if (state.currentPage === 'detail') loadTaskDetail(id, true);
+    toast('Task merged', 'success');
+    refreshCurrentPage();
   } catch (e) {
     toast(e.message, 'error');
   }
 }
 
 async function restartTask(id) {
-  if (!confirm(`Restart task #${id}?`)) return;
   try {
     await api(`/api/tasks/${id}/restart`, 'POST');
-    toast(`Task #${id} restarted.`, 'success');
-    loadTasks(true);
-    if (state.currentPage === 'detail') loadTaskDetail(id, true);
+    toast('Task restarted', 'success');
+    refreshCurrentPage();
   } catch (e) {
     toast(e.message, 'error');
   }
 }
 
-// ── Login Modal ───────────────────────────────────────────
+async function deleteTask(id) {
+  if (!confirm('Delete this task? This cannot be undone.')) return;
+  try {
+    await api(`/api/tasks/${id}/delete`, 'POST');
+    toast('Task deleted', 'success');
+    if (state.currentPage === 'detail') showPage('tasks');
+    else refreshCurrentPage();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// ── Info Page ───────────────────────────────────────────
+
+async function loadInfo() {
+  const el = document.getElementById('info-body');
+  try {
+    const info = await api('/api/info');
+    el.innerHTML = `<pre class="json-view">${escHtml(JSON.stringify(info, null, 2))}</pre>`;
+  } catch (e) {
+    el.innerHTML = `<div class="empty-state">${escHtml(e.message)}</div>`;
+  }
+}
+
+// ── Worker availability banner ─────────────────────────
+
+async function updateWorkerAvailBanner() {
+  const banner = document.getElementById('worker-avail-banner');
+  if (!banner) return;
+
+  try {
+    const data = await api('/api/constellation/status');
+    if (!data || !data.total) {
+      banner.style.display = 'flex';
+      banner.className = 'worker-avail-banner avail-none';
+      banner.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12" y2="16"/></svg>No worker pool configured — task will run via local CLI.`;
+      return;
+    }
+    if (data.idle > 0) {
+      banner.style.display = 'flex';
+      banner.className = 'worker-avail-banner avail-ok';
+      banner.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>${data.idle} worker${data.idle !== 1 ? 's' : ''} idle and ready.`;
+    } else {
+      banner.style.display = 'flex';
+      banner.className = 'worker-avail-banner avail-busy';
+      banner.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12" y2="16"/></svg>All ${data.total} workers busy — task will queue or may fail.`;
+    }
+  } catch {
+    banner.style.display = 'none';
+  }
+}
+
+// ── Data Normalization ─────────────────────────────────
+
+function normalizeTask(t) {
+  return {
+    id: t.id || t.taskId || '—',
+    title: t.title || null,
+    description: t.description || t.prompt || '',
+    status: t.status || 'NEW',
+    agent: t.agent || '—',
+    model: t.model || null,
+    repo: t.repo || null,
+    branch: t.branch || t.baseBranch || null,
+    worktreeBranch: t.worktreeBranch || null,
+    startedAt: t.startedAt || null,
+    completedAt: t.completedAt || null,
+    failedAt: t.failedAt || null,
+    iterationsData: t.iterationsData || [],
+    workerId: t.workerId || null,
+    workerIndex: t.workerIndex || null,
+  };
+}
+
+// ── Login ───────────────────────────────────────────────
 
 function showLoginModal(errorMsg = null) {
   document.getElementById('login-modal').classList.add('open');
   const errEl = document.getElementById('login-error');
   if (errorMsg) {
     errEl.textContent = errorMsg;
-    errEl.style.display = 'block';
+    errEl.style.display = '';
   } else {
     errEl.style.display = 'none';
   }
-  setTimeout(() => document.getElementById('login-token').focus(), 100);
 }
 
-function closeLoginModal() {
+function hideLoginModal() {
   document.getElementById('login-modal').classList.remove('open');
 }
 
 async function submitLogin() {
   const token = document.getElementById('login-token').value.trim();
   if (!token) return;
+
   setToken(token);
-  closeLoginModal();
-  await init(); // re-initialize with the token
+  hideLoginModal();
+
+  try {
+    await api('/api/health');
+    init();
+  } catch (e) {
+    clearToken();
+    showLoginModal('Invalid token');
+  }
 }
 
 function logout() {
@@ -1052,131 +1405,64 @@ function logout() {
   location.reload();
 }
 
-// ── Create Task Modal ─────────────────────────────────────
-
-function openCreateModal() {
-  document.getElementById('create-modal').classList.add('open');
-  setTimeout(() => document.getElementById('task-description').focus(), 100);
-  updateWorkerAvailBanner();
-}
-
-function closeCreateModal() {
-  document.getElementById('create-modal').classList.remove('open');
-}
-
-async function createTask() {
-  const description = document.getElementById('task-description').value.trim();
-  if (!description) {
-    toast('Please enter a task description.', 'error');
-    document.getElementById('task-description').focus();
-    return;
-  }
-
-  const agent = document.getElementById('task-agent').value || undefined;
-  const role = document.getElementById('task-role').value || undefined;
-  const model = document.getElementById('task-model').value.trim() || undefined;
-  const priority = document.getElementById('task-priority').value || undefined;
-  const repo = document.getElementById('task-repo').value.trim() || undefined;
-  const branch =
-    document.getElementById('task-branch').value.trim() || undefined;
-  const project =
-    document.getElementById('task-project').value.trim() || undefined;
-
-  const btn = document.getElementById('btn-create-task');
-  btn.disabled = true;
-  btn.innerHTML = `<div class="spinner"></div> Creating…`;
-
-  try {
-    const result = await api('/api/tasks', 'POST', {
-      description,
-      agent,
-      role,
-      model,
-      priority,
-      repo,
-      sourceBranch: branch,
-      project,
-    });
-    closeCreateModal();
-    document.getElementById('task-description').value = '';
-    document.getElementById('task-agent').value = '';
-    document.getElementById('task-role').value = '';
-    document.getElementById('task-model').value = '';
-    document.getElementById('task-priority').value = 'batch';
-    document.getElementById('task-repo').value = '';
-    document.getElementById('task-branch').value = '';
-    document.getElementById('task-project').value = '';
-
-    const newId = result.taskId || result.tasks?.[0]?.taskId;
-    toast(`Task created${newId ? ` (#${newId})` : ''}!`, 'success');
-    showPage('tasks');
-    await loadTasks();
-    if (newId) setTimeout(() => openTask(newId), 600);
-    // Refresh worker status after dispatch
-    setTimeout(() => loadConstellationStatus(true), 1500);
-  } catch (e) {
-    toast(e.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Create Task`;
-  }
-}
-
-// Close modal when clicking overlay
-document.getElementById('create-modal').addEventListener('click', function (e) {
-  if (e.target === this) closeCreateModal();
-});
-
-// Close login modal when clicking overlay
-document.getElementById('login-modal').addEventListener('click', function (e) {
-  if (e.target === this) closeLoginModal();
-});
-
-// Login token Enter key handler
-document.getElementById('login-token')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter') submitLogin();
-});
-
-// Close modal with Escape (also closes worker drawer)
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    closeCreateModal();
-    closeLoginModal();
-    closeWorkerDrawer();
-  }
-});
-
-// Textarea: Ctrl+Enter to submit
-document.getElementById('task-description').addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') createTask();
-});
-
-// ── Init ──────────────────────────────────────────────────
+// ── Init ────────────────────────────────────────────────
 
 async function init() {
   try {
-    const health = await fetch('/api/health').then(r => r.json());
+    const health = await api('/api/health');
+
     if (health.authRequired && !getToken()) {
       showLoginModal();
       return;
     }
-    if (health.roverCli && !health.roverCli.available) {
-      toast(
-        'Rover CLI is not available on this server. Task creation will not work.',
-        'error'
-      );
-      console.warn('Rover CLI not found:', health.roverCli);
+
+    document.getElementById('btn-logout').style.display = '';
+
+    if (health.roverCli) {
+      const v = health.roverCli.version || 'not available';
+      document.getElementById('sidebar-version').textContent = `Rover ${v}`;
     }
-  } catch {
-    /* ignore — server might not have health endpoint */
+
+    // Show projects page by default
+    showPage('projects');
+    startAutoRefresh();
+    startConstellationPolling();
+
+  } catch (e) {
+    if (e.message === 'AUTH_REQUIRED') return;
+    toast(`Failed to initialize: ${e.message}`, 'error');
   }
-
-  const logoutBtn = document.getElementById('btn-logout');
-  if (logoutBtn) logoutBtn.style.display = getToken() ? '' : 'none';
-
-  await loadTasks();
-  startAutoRefresh();
-  startConstellationPolling();
 }
 
-init();
+// ── Event Listeners ─────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Close modals on escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeLoadProjectModal();
+      closeCreateTaskModal();
+      closeConversationModal();
+      closeWorkerDrawer();
+    }
+  });
+
+  // Row action hover effects
+  document.addEventListener('mouseenter', (e) => {
+    const tr = e.target.closest('tbody tr');
+    if (tr) {
+      const actions = tr.querySelector('.row-actions');
+      if (actions) actions.style.opacity = '1';
+    }
+  }, true);
+
+  document.addEventListener('mouseleave', (e) => {
+    const tr = e.target.closest('tbody tr');
+    if (tr) {
+      const actions = tr.querySelector('.row-actions');
+      if (actions) actions.style.opacity = '0';
+    }
+  }, true);
+
+  init();
+});

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Rover Dashboard</title>
-  <meta name="description" content="Rover Web Dashboard — Monitor and control your AI coding agents" />
+  <meta name="description" content="Rover Web Dashboard — AI Agent Orchestration Platform" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23107e7a'/%3E%3Cpath d='M9 10h9a4 4 0 0 1 0 8h-5l5 4H14l-5-4v4H9V10z' fill='white'/%3E%3C/svg%3E" />
 </head>
@@ -22,26 +22,54 @@
       <span class="sidebar-logo-text">Ro<span>ver</span></span>
     </div>
 
-    <div class="sidebar-section">Overview</div>
+    <div class="sidebar-section">Orchestration</div>
 
-    <div class="nav-item active" data-page="tasks" id="nav-tasks" onclick="showPage('tasks')">
+    <div class="nav-item active" data-page="projects" id="nav-projects" onclick="showPage('projects')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/>
-        <line x1="9" y1="21" x2="9" y2="9"/>
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
       </svg>
-      <span>Tasks</span>
-      <span class="nav-badge" id="badge-tasks">0</span>
+      <span>Projects</span>
+      <span class="nav-badge" id="badge-projects">0</span>
     </div>
 
-    <div class="sidebar-section">Actions</div>
+    <div class="nav-item" data-page="director" id="nav-director" onclick="showPage('director')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M12 6v6l4 2"/>
+      </svg>
+      <span>Director Chat</span>
+      <span class="nav-badge nav-badge-dot" id="badge-director" style="display:none"></span>
+    </div>
 
-    <div class="nav-item" id="nav-create" onclick="openCreateModal()">
+    <div class="sidebar-section">Operations</div>
+
+    <div class="nav-item" id="nav-load-project" onclick="openLoadProjectModal()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"/>
         <line x1="12" y1="8" x2="12" y2="16"/>
         <line x1="8" y1="12" x2="16" y2="12"/>
       </svg>
-      <span>New Task</span>
+      <span>Load Project</span>
+    </div>
+
+    <div class="nav-item" data-page="workers" id="nav-workers" onclick="showPage('workers')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2"/>
+        <line x1="8" y1="21" x2="16" y2="21"/>
+        <line x1="12" y1="17" x2="12" y2="21"/>
+      </svg>
+      <span>Workers</span>
+      <span class="nav-badge" id="badge-workers">0</span>
+    </div>
+
+    <div class="nav-item" data-page="tasks" id="nav-tasks" onclick="showPage('tasks')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/>
+        <line x1="9" y1="21" x2="9" y2="9"/>
+      </svg>
+      <span>All Tasks</span>
+      <span class="nav-badge" id="badge-tasks">0</span>
     </div>
 
     <div class="sidebar-section">System</div>
@@ -79,9 +107,10 @@
     <header class="topbar">
       <div class="topbar-title" id="topbar-title">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          <polyline points="9 22 9 12 15 12 15 22"/>
         </svg>
-        Tasks
+        Projects
       </div>
       <div class="topbar-actions">
         <button class="btn btn-ghost btn-sm" id="btn-refresh" onclick="refreshCurrentPage()">
@@ -91,11 +120,11 @@
           </svg>
           Refresh
         </button>
-        <button class="btn btn-primary btn-sm" onclick="openCreateModal()">
+        <button class="btn btn-primary btn-sm" onclick="openLoadProjectModal()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
-          New Task
+          Load Project
         </button>
       </div>
     </header>
@@ -118,8 +147,251 @@
     <!-- Content -->
     <main class="content">
 
-      <!-- ══ Tasks Page ══════════════════════════════ -->
-      <div class="page active" id="page-tasks">
+      <!-- ══ Projects Page ══════════════════════════════ -->
+      <div class="page active" id="page-projects">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Active Projects</div>
+            <div class="page-subtitle">Projects loaded with Director orchestration</div>
+          </div>
+        </div>
+
+        <!-- Projects Grid -->
+        <div id="projects-grid">
+          <div class="loading-state"><div class="spinner"></div> Loading projects…</div>
+        </div>
+      </div>
+
+      <!-- ══ Project Detail Page ════════════════════════ -->
+      <div class="page" id="page-project-detail">
+        <div class="breadcrumb">
+          <span class="breadcrumb-link" onclick="showPage('projects')">Projects</span>
+          <span class="breadcrumb-sep">/</span>
+          <span class="breadcrumb-current" id="project-detail-breadcrumb">Project</span>
+        </div>
+
+        <div class="page-header">
+          <div>
+            <div class="page-title" id="project-detail-title">—</div>
+            <div class="page-subtitle" id="project-detail-subtitle"></div>
+          </div>
+          <div class="action-bar" id="project-detail-actions"></div>
+        </div>
+
+        <!-- Project Tabs -->
+        <div class="tabs mb-5">
+          <button class="tab-btn active" id="tab-project-overview" onclick="switchProjectTab('overview')">Overview</button>
+          <button class="tab-btn" id="tab-project-repos" onclick="switchProjectTab('repos')">Repositories</button>
+          <button class="tab-btn" id="tab-project-tasks" onclick="switchProjectTab('tasks')">Tasks</button>
+          <button class="tab-btn" id="tab-project-director" onclick="switchProjectTab('director')">Director Chat</button>
+        </div>
+
+        <!-- ── Project Overview Tab ── -->
+        <div id="tab-panel-project-overview">
+          <div class="detail-grid">
+            <div style="display:flex;flex-direction:column;gap:var(--space-5)">
+              <!-- Project Status -->
+              <div class="card">
+                <div class="card-header"><div class="card-title">Project Status</div></div>
+                <div class="card-body">
+                  <div id="project-status-content">
+                    <div class="loading-state"><div class="spinner"></div></div>
+                  </div>
+                </div>
+              </div>
+              <!-- Active Work -->
+              <div class="card">
+                <div class="card-header"><div class="card-title">Active Work</div></div>
+                <div class="card-body" id="project-active-work">
+                  <div class="text-dim" style="font-size:0.85rem">No active work items.</div>
+                </div>
+              </div>
+            </div>
+            <!-- Meta sidebar -->
+            <div style="display:flex;flex-direction:column;gap:var(--space-5)">
+              <div class="card">
+                <div class="card-header"><div class="card-title">Project Details</div></div>
+                <div class="card-body">
+                  <div class="detail-meta-grid" id="project-detail-meta"></div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header"><div class="card-title">Director</div></div>
+                <div class="card-body" id="project-director-info">
+                  <div class="text-dim" style="font-size:0.8rem">Loading director info…</div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header"><div class="card-title">Worker Assignments</div></div>
+                <div class="card-body" id="project-worker-assignments">
+                  <div class="text-dim" style="font-size:0.8rem">No worker assignments.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Repositories Tab ── -->
+        <div id="tab-panel-project-repos" class="hidden">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Project Repositories</div>
+            </div>
+            <div class="card-body" id="project-repos-list">
+              <div class="loading-state"><div class="spinner"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Project Tasks Tab ── -->
+        <div id="tab-panel-project-tasks" class="hidden">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Project Tasks</div>
+              <button class="btn btn-primary btn-sm" onclick="openCreateTaskModal()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                New Task
+              </button>
+            </div>
+            <div id="project-tasks-list">
+              <div class="loading-state"><div class="spinner"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Project Director Chat Tab ── -->
+        <div id="tab-panel-project-director" class="hidden">
+          <div class="card" style="height:600px;display:flex;flex-direction:column">
+            <div class="card-header">
+              <div class="card-title">Director Conversation</div>
+              <div style="font-size:0.78rem;color:var(--text-3)">
+                Orchestrating across all project repositories
+              </div>
+            </div>
+            <div class="card-body" style="flex:1;overflow:hidden;display:flex;flex-direction:column;padding:0">
+              <div id="project-director-chat" style="flex:1;overflow-y:auto;padding:var(--space-4)">
+                <div class="text-dim" style="font-size:0.85rem;text-align:center;padding:var(--space-8)">
+                  Start a conversation with the Director to coordinate work across repositories.
+                </div>
+              </div>
+              <div style="padding:var(--space-4);border-top:1px solid var(--border);display:flex;gap:var(--space-3)">
+                <textarea id="project-director-input" class="form-textarea" placeholder="Message the Director…" rows="2" style="flex:1;margin:0"></textarea>
+                <button class="btn btn-primary" onclick="sendProjectDirectorMessage()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                    <line x1="22" y1="2" x2="11" y2="13"/>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ Director Chat Page ═════════════════════════ -->
+      <div class="page" id="page-director">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Director Orchestration</div>
+            <div class="page-subtitle">Main coordination hub for all projects</div>
+          </div>
+        </div>
+
+        <div class="detail-grid" style="height:calc(100vh - 220px)">
+          <!-- Director Chat -->
+          <div class="card" style="display:flex;flex-direction:column;height:100%">
+            <div class="card-header">
+              <div class="card-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="margin-right:8px">
+                  <circle cx="12" cy="12" r="10"/>
+                  <path d="M12 6v6l4 2"/>
+                </svg>
+                Director
+              </div>
+              <div style="font-size:0.78rem;color:var(--text-3)">
+                Main orchestration conversation
+              </div>
+            </div>
+            <div class="card-body" style="flex:1;overflow:hidden;display:flex;flex-direction:column;padding:0">
+              <div id="director-chat-messages" style="flex:1;overflow-y:auto;padding:var(--space-4)">
+                <div class="chat-message director">
+                  <div class="chat-avatar">D</div>
+                  <div class="chat-content">
+                    <div class="chat-header">Director</div>
+                    <div class="chat-body">
+                      Welcome to Rover Director Orchestration. I'm here to help coordinate work across your projects.
+                      <br><br>
+                      To get started, load a project and I'll:
+                      <ul style="margin:8px 0;padding-left:20px">
+                        <li>Scan all repositories and understand the codebase</li>
+                        <li>Find existing tasks and analyze work in progress</li>
+                        <li>Assign workers to appropriate repositories</li>
+                        <li>Coordinate multi-repo work</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style="padding:var(--space-4);border-top:1px solid var(--border);display:flex;gap:var(--space-3)">
+                <textarea id="director-input" class="form-textarea" placeholder="Message the Director…" rows="2" style="flex:1;margin:0"></textarea>
+                <button class="btn btn-primary" onclick="sendDirectorMessage()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                    <line x1="22" y1="2" x2="11" y2="13"/>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active Projects Panel -->
+          <div style="display:flex;flex-direction:column;gap:var(--space-5);max-width:380px">
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Active Projects</div>
+              </div>
+              <div class="card-body" id="director-projects-list">
+                <div class="text-dim" style="font-size:0.85rem;text-align:center;padding:var(--space-4)">
+                  No active projects. Load a project to get started.
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Worker Pool Status</div>
+              </div>
+              <div class="card-body" id="director-worker-status">
+                <div class="loading-state"><div class="spinner"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ Workers Page ═══════════════════════════════ -->
+      <div class="page" id="page-workers">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Worker Pool</div>
+            <div class="page-subtitle">Constellation status and assignments</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">All Workers</div>
+          </div>
+          <div class="card-body" id="workers-list">
+            <div class="loading-state"><div class="spinner"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ Tasks Page ═════════════════════════════════ -->
+      <div class="page" id="page-tasks">
 
         <!-- Stats -->
         <div class="stats-grid" id="stats-grid">
@@ -159,7 +431,7 @@
         </div>
       </div>
 
-      <!-- ══ Task Detail Page ════════════════════════ -->
+      <!-- ══ Task Detail Page ═══════════════════════════ -->
       <div class="page" id="page-detail">
         <div class="breadcrumb">
           <span class="breadcrumb-link" onclick="showPage('tasks')">Tasks</span>
@@ -180,6 +452,7 @@
           <button class="tab-btn active" id="tab-overview" onclick="switchTab('overview')">Overview</button>
           <button class="tab-btn" id="tab-logs" onclick="switchTab('logs')">Logs</button>
           <button class="tab-btn" id="tab-diff" onclick="switchTab('diff')">Diff</button>
+          <button class="tab-btn" id="tab-conversation" onclick="switchTab('conversation')">Conversation</button>
         </div>
 
         <!-- ── Overview Tab ── -->
@@ -215,6 +488,21 @@
                   <div class="file-list" id="detail-files">
                     <div class="text-dim" style="font-size:0.8rem">No file data yet.</div>
                   </div>
+                </div>
+              </div>
+              <!-- Continue Conversation Card -->
+              <div class="card">
+                <div class="card-header"><div class="card-title">Agent Conversation</div></div>
+                <div class="card-body">
+                  <div style="font-size:0.85rem;color:var(--text-2);margin-bottom:var(--space-3)">
+                    Continue working with this agent for additional changes or debugging.
+                  </div>
+                  <button class="btn btn-primary btn-sm" onclick="continueTaskConversation()" style="width:100%">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right:6px">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    Continue Conversation
+                  </button>
                 </div>
               </div>
             </div>
@@ -255,9 +543,37 @@
             </div>
           </div>
         </div>
+
+        <!-- ── Conversation Tab ── -->
+        <div id="tab-panel-conversation" class="hidden">
+          <div class="card" style="height:600px;display:flex;flex-direction:column">
+            <div class="card-header">
+              <div class="card-title">Task Agent Conversation</div>
+              <div style="font-size:0.78rem;color:var(--text-3)">
+                Continue the conversation with this task's agent
+              </div>
+            </div>
+            <div class="card-body" style="flex:1;overflow:hidden;display:flex;flex-direction:column;padding:0">
+              <div id="task-conversation-messages" style="flex:1;overflow-y:auto;padding:var(--space-4)">
+                <div class="text-dim" style="font-size:0.85rem;text-align:center;padding:var(--space-8)">
+                  Loading conversation history…
+                </div>
+              </div>
+              <div style="padding:var(--space-4);border-top:1px solid var(--border);display:flex;gap:var(--space-3)">
+                <textarea id="task-conversation-input" class="form-textarea" placeholder="Message the agent…" rows="2" style="flex:1;margin:0"></textarea>
+                <button class="btn btn-primary" onclick="sendTaskConversationMessage()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                    <line x1="22" y1="2" x2="11" y2="13"/>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <!-- ══ Info Page ═══════════════════════════════ -->
+      <!-- ══ Info Page ══════════════════════════════════ -->
       <div class="page" id="page-info">
         <div class="page-header">
           <div>
@@ -274,7 +590,172 @@
   </div>
 </div>
 
-<!-- ─── Worker Task Log Drawer ──────────────────────────── -->
+<!-- ─── Load Project Modal ─────────────────────────── -->
+<div class="modal-overlay" id="load-project-modal">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+      Load Project
+    </div>
+
+    <!-- Worker availability banner -->
+    <div id="worker-avail-banner" style="display:none"></div>
+
+    <div class="form-group">
+      <label class="form-label" for="project-name">Project Name <span>*</span></label>
+      <input class="form-input" id="project-name" type="text" placeholder="e.g., FPX-Laureline" />
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="project-base-repo">Base Repository <span>*</span></label>
+      <input class="form-input" id="project-base-repo" type="text" placeholder="https://github.com/username/repo" />
+      <div class="form-hint">Primary repository for the project. The Director will clone this first.</div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="project-additional-repos">Additional Repositories <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
+      <textarea class="form-textarea" id="project-additional-repos" placeholder="https://github.com/username/frontend-repo
+https://github.com/username/backend-repo" rows="3"></textarea>
+      <div class="form-hint">One repository URL per line. The Director will have visibility into all repos.</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)">
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label" for="project-source-branch">Source Branch</label>
+        <input class="form-input" id="project-source-branch" type="text" placeholder="main" value="main" />
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label" for="project-model">Director Model</label>
+        <select class="form-select" id="project-model">
+          <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+          <option value="claude-opus-4-20250514">Claude Opus 4</option>
+          <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group mt-4">
+      <label class="form-label" for="project-director-prompt">Director Instructions <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
+      <textarea class="form-textarea" id="project-director-prompt" placeholder="Optional instructions for the Director agent…" rows="3"></textarea>
+      <div class="form-hint">The Director will scan the codebase and create an audit report automatically.</div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeLoadProjectModal()">Cancel</button>
+      <button class="btn btn-primary" id="btn-load-project" onclick="loadProject()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Load & Dispatch Director
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Create Task Modal ──────────────────────────── -->
+<div class="modal-overlay" id="create-task-modal">
+  <div class="modal">
+    <div class="modal-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="16"/>
+        <line x1="8" y1="12" x2="16" y2="12"/>
+      </svg>
+      Create New Task
+    </div>
+
+    <input type="hidden" id="task-project-id" />
+
+    <div class="form-group">
+      <label class="form-label" for="task-description">Task Description <span>*</span></label>
+      <textarea class="form-textarea" id="task-description" placeholder="Describe what you want the AI agent to accomplish…" rows="4"></textarea>
+      <div class="form-hint">Be specific — the agent will use this as its instructions.</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)">
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label" for="task-repo">Target Repository <span>*</span></label>
+        <select class="form-select" id="task-repo">
+          <option value="">Select repository…</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label" for="task-agent">Agent</label>
+        <select class="form-select" id="task-agent">
+          <option value="">Auto-detect</option>
+          <option value="claude">Claude</option>
+          <option value="gemini">Gemini</option>
+          <option value="codex">Codex</option>
+          <option value="cursor">Cursor</option>
+          <option value="qwen">Qwen</option>
+          <option value="opencode">OpenCode</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);margin-top:var(--space-4)">
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label" for="task-model">Model Override <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
+        <input class="form-input" id="task-model" type="text" placeholder="e.g. claude-sonnet-4-20250514" />
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label" for="task-priority">Priority</label>
+        <select class="form-select" id="task-priority">
+          <option value="batch">Batch (default)</option>
+          <option value="standard">Standard</option>
+          <option value="urgent">Urgent</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeCreateTaskModal()">Cancel</button>
+      <button class="btn btn-primary" id="btn-create-task" onclick="createTask()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        Create Task
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Continue Conversation Modal ────────────────── -->
+<div class="modal-overlay" id="conversation-modal">
+  <div class="modal" style="max-width:800px;height:80vh;display:flex;flex-direction:column">
+    <div class="modal-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="margin-right:8px">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+      Continue Conversation
+    </div>
+
+    <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;margin:0 -24px;padding:0 24px">
+      <div id="conversation-messages" style="flex:1;overflow-y:auto;padding:var(--space-4) 0">
+        <div class="text-dim" style="font-size:0.85rem;text-align:center;padding:var(--space-8)">
+          Loading conversation history…
+        </div>
+      </div>
+    </div>
+
+    <div style="padding-top:var(--space-4);border-top:1px solid var(--border);display:flex;gap:var(--space-3);margin:0 -24px -24px;padding:var(--space-4) 24px 24px">
+      <textarea id="conversation-input" class="form-textarea" placeholder="Continue the conversation…" rows="2" style="flex:1;margin:0"></textarea>
+      <button class="btn btn-primary" onclick="sendConversationMessage()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Worker Task Log Drawer ─────────────────────── -->
 <div class="drawer-overlay" id="worker-drawer" onclick="closeWorkerDrawer()">
   <div class="drawer" onclick="event.stopPropagation()">
     <div class="drawer-header">
@@ -297,96 +778,6 @@
     <div class="drawer-meta" id="drawer-meta"></div>
     <div class="drawer-log" id="drawer-log">
       <div class="loading-state"><div class="spinner"></div> Loading logs…</div>
-    </div>
-  </div>
-</div>
-
-<!-- ─── Create Task Modal ────────────────────────────── -->
-<div class="modal-overlay" id="create-modal">
-  <div class="modal">
-    <div class="modal-title">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-      Create New Task
-    </div>
-
-    <!-- Worker availability banner -->
-    <div id="worker-avail-banner" style="display:none"></div>
-
-    <div class="form-group">
-      <label class="form-label" for="task-description">Task Description <span>*</span></label>
-      <textarea class="form-textarea" id="task-description" placeholder="Describe what you want the AI agent to accomplish…" rows="4"></textarea>
-      <div class="form-hint">Be specific — the agent will use this as its instructions.</div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)">
-      <div class="form-group" style="margin-bottom:0">
-        <label class="form-label" for="task-agent">Agent</label>
-        <select class="form-select" id="task-agent">
-          <option value="">Auto-detect</option>
-          <option value="claude">Claude</option>
-          <option value="gemini">Gemini</option>
-          <option value="codex">Codex</option>
-          <option value="cursor">Cursor</option>
-          <option value="qwen">Qwen</option>
-          <option value="opencode">OpenCode</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin-bottom:0">
-        <label class="form-label" for="task-role">Agent Role</label>
-        <select class="form-select" id="task-role">
-          <option value="">— none —</option>
-          <option value="coder-backend">Coder (Backend)</option>
-          <option value="coder-frontend">Coder (Frontend)</option>
-          <option value="coder-integration">Coder (Integration)</option>
-          <option value="director">Director</option>
-          <option value="docs-prod">Docs &amp; Production</option>
-          <option value="security">Security &amp; Debug</option>
-          <option value="aiml">AI/ML Specialist</option>
-          <option value="whatsapp">WhatsApp Specialist</option>
-          <option value="context-engineer">Context Engineer</option>
-        </select>
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);margin-top:var(--space-4)">
-      <div class="form-group" style="margin-bottom:0">
-        <label class="form-label" for="task-model">Model Override <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
-        <input class="form-input" id="task-model" type="text" placeholder="e.g. claude-sonnet-4-6-20250620" />
-      </div>
-      <div class="form-group" style="margin-bottom:0">
-        <label class="form-label" for="task-priority">Priority</label>
-        <select class="form-select" id="task-priority">
-          <option value="batch">Batch (default)</option>
-          <option value="standard">Standard</option>
-          <option value="urgent">Urgent</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="form-group mt-4">
-      <label class="form-label" for="task-repo">Repository URL <span style="color:var(--text-3);font-weight:400">(required for workers)</span></label>
-      <input class="form-input" id="task-repo" type="text" placeholder="https://github.com/org/repo" />
-      <div class="form-hint">GitHub repo to clone. Required when dispatching to a worker.</div>
-    </div>
-
-    <div class="form-group mt-4">
-      <label class="form-label" for="task-project">Project Path <span style="color:var(--text-3);font-weight:400">(optional, local CLI)</span></label>
-      <input class="form-input" id="task-project" type="text" placeholder="e.g. /path/to/project or leave empty for default" />
-      <div class="form-hint">Local project directory. Used only when no workers are configured.</div>
-    </div>
-
-    <div class="form-group mt-4">
-      <label class="form-label" for="task-branch">Source Branch <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
-      <input class="form-input" id="task-branch" type="text" placeholder="e.g. main, develop" />
-      <div class="form-hint">The branch Rover will create the git worktree from.</div>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeCreateModal()">Cancel</button>
-      <button class="btn btn-primary" id="btn-create-task" onclick="createTask()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Create Task
-      </button>
     </div>
   </div>
 </div>
