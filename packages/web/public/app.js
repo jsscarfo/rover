@@ -515,8 +515,19 @@ async function loadProjectDetail(id, silent = false) {
   // Load project tasks
   await loadProjectTasks(project);
 
-  // Render repos
+  // Render repos with Add Repository button
   document.getElementById('project-repos-list').innerHTML = `
+    <div class="flex" style="justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <div class="text-dim">${project.repos?.length || 0} repository(s) in this project</div>
+      <button class="btn btn-ghost btn-sm" onclick="openAddRepoModal('${project.id}')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right: 6px">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="16"/>
+          <line x1="8" y1="12" x2="16" y2="12"/>
+        </svg>
+        Add Repository
+      </button>
+    </div>
     <div class="repo-list">
       ${project.repos?.map((repo, i) => `
         <div class="repo-item">
@@ -536,6 +547,59 @@ async function loadProjectDetail(id, silent = false) {
   `;
 
   setLastRefresh();
+}
+
+// ── Add Repository Modal ────────────────────────────────
+
+function openAddRepoModal(projectId) {
+  document.getElementById('add-repo-project-id').value = projectId;
+  document.getElementById('add-repo-url').value = '';
+  document.getElementById('add-repo-branch').value = 'main';
+  document.getElementById('add-repo-modal').classList.add('open');
+  setTimeout(() => document.getElementById('add-repo-url').focus(), 100);
+}
+
+function closeAddRepoModal() {
+  document.getElementById('add-repo-modal').classList.remove('open');
+}
+
+function addRepository() {
+  const projectId = document.getElementById('add-repo-project-id').value;
+  const repoUrl = document.getElementById('add-repo-url').value.trim();
+  const branch = document.getElementById('add-repo-branch').value.trim() || 'main';
+
+  if (!repoUrl) {
+    toast('Repository URL is required', 'error');
+    return;
+  }
+
+  // Validate URL format
+  if (!repoUrl.startsWith('https://github.com/')) {
+    toast('Repository URL must start with https://github.com/', 'error');
+    return;
+  }
+
+  const project = getProjects().find(p => p.id === projectId);
+  if (!project) {
+    toast('Project not found', 'error');
+    return;
+  }
+
+  // Check if repo already exists
+  if (project.repos?.includes(repoUrl)) {
+    toast('Repository already added to this project', 'error');
+    return;
+  }
+
+  // Add repo to project
+  const updatedRepos = [...(project.repos || []), repoUrl];
+  updateProject(projectId, { repos: updatedRepos });
+
+  closeAddRepoModal();
+  toast(`Repository added to ${project.name}`, 'success');
+
+  // Refresh the project detail view
+  loadProjectDetail(projectId);
 }
 
 async function loadProjectTasks(project) {
